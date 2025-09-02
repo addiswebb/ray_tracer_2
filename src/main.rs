@@ -1,6 +1,7 @@
-mod app;
-mod egui;
 use winit::event_loop::{ControlFlow, EventLoop};
+
+use crate::core::app;
+mod core;
 
 fn main() {
     #[cfg(not(target_arch="wasm32"))]
