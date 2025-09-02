@@ -1,0 +1,14 @@
+[package]
+name = "ray_tracer_2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+egui = "0.32.1"
+egui-wgpu = { version = "0.32.1", features= ["winit"]}
+egui-winit = "0.32.1"
+winit = "0.30.12"
+pollster = "0.4.0"
+
+log = "0.4.27"
+env_logger = "0.11.8"
