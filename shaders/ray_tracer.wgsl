@@ -47,6 +47,8 @@ var<storage,read> indices: array<u32>;
 @group(0) @binding(6)
 var<storage,read> meshes: array<Mesh>;
 
+const epsilon: f32 = 1e-4;
+
 @compute
 @workgroup_size(8,8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -57,7 +59,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let pos = vec2<i32>(i32(i.pos.x),i32(i.pos.y));
     if(params.frames >= 1){
-        let weight = 1.0 / f32(params.frames + 1);
+        let weight = 1.0 / f32(params.frames);
         let prev_color = textureLoad(texture,pos);
         let new_color = prev_color * vec4<f32>(1.0 - weight) + frag(i) * weight;
         textureStore(texture, pos, new_color);
@@ -93,7 +95,7 @@ struct Hit{
     hit: bool,
     dst: f32,
     hit_point: vec3<f32>,
-    normal: vec3<f32>, 
+    normal: vec3<f32>,
     material: Material,
 }
 
@@ -102,6 +104,14 @@ const SKY_ZENITH: vec4<f32> = vec4<f32>(0.0788092, 0.36480793, 0.7264151, 0.0);
 const GROUND_COLOR: vec4<f32> = vec4<f32>(0.35,0.3,0.35, 0.0);
 const SUN_INTENSITY: f32 = 0.1;
 const SUN_FOCUS: f32 = 500.0;
+
+fn safe_normalize(vec: vec3<f32>) -> vec3<f32>{
+    var n = normalize(vec);
+    if (n.x != n.x || n.y != n.y || n.z != n.z){
+        n = vec3<f32>(0.0,1.0,0.0);
+    }
+    return n;
+}
 
 fn ray_sphere(ray: Ray, pos: vec3<f32>, radius: f32) -> Hit{
     var hit: Hit;
@@ -112,13 +122,13 @@ fn ray_sphere(ray: Ray, pos: vec3<f32>, radius: f32) -> Hit{
     let discriminant = b * b - 4.0 * a * c;
     if discriminant >= 0.0{
         let dst = (-b - sqrt(discriminant))/(2.0*a);
-        if dst >= 0.0{
+        if dst > epsilon{
             hit.hit = true;
             hit.hit_point = ray.origin + ray.dir * dst;
             hit.dst = dst;
-            hit.normal = normalize(hit.hit_point - pos);
+            hit.normal = safe_normalize(hit.hit_point - pos);
         }
-    } 
+    }
     return hit;
 }
 
@@ -131,6 +141,10 @@ fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit{
     let dao = cross(ao, ray.dir);
 
     let determinant = -dot(ray.dir, normal);
+    if determinant < epsilon {
+        hit.hit = false;
+        return hit;
+    }
     let inverse_determinant = 1.0 / determinant;
 
     let dst = dot(ao, normal) * inverse_determinant;
@@ -138,16 +152,20 @@ fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit{
     let v = -dot(edge_ab, dao) * inverse_determinant;
     let w = 1.0 - u - v;
 
-    hit.hit = determinant >= 1e-6 && dst >= 0.0 && u >= 0.0 && v >= 0.0 && w >= 0.0;
-    hit.hit_point = ray.origin + ray.dir * dst;
-    hit.normal = normalize(a.normal * w + b.normal * u + c.normal * v);
-    hit.dst = dst;
+    if  dst > epsilon && u >= 0.0 && v >= 0.0 && w >= 0.0 {
+        hit.hit = true;
+        hit.hit_point = ray.origin + ray.dir * dst;
+        hit.normal = safe_normalize(a.normal * w + b.normal * u + c.normal * v);
+        hit.dst = dst;
+    }else{
+        hit.hit = false;
+    }
 
     return hit;
 }
 
 fn calculate_ray_collions(ray: Ray) -> Hit{
-    var closest_hit: Hit; 
+    var closest_hit: Hit;
     closest_hit.dst = 0x1.fffffep+127f;
     for(var i: u32 = 0u; i < arrayLength(&spheres); i+=1u){
         var hit: Hit = ray_sphere(ray, spheres[i].position, spheres[i].radius);
@@ -193,7 +211,7 @@ fn rand_unit_sphere(seed: ptr<function, u32>) -> vec3<f32> {
     let y = rand_normal_dist(seed);
     let z = rand_normal_dist(seed);
 
-    return normalize(vec3(x, y, z));
+    return safe_normalize(vec3(x, y, z));
 }
 
 fn rand_normal_dist(seed: ptr<function, u32>) -> f32 {
@@ -234,10 +252,10 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32>{
         var hit = calculate_ray_collions(ray);
         if (hit.hit){
             ray.origin = hit.hit_point;
-            let unit_dir = normalize(ray.dir);
+            let unit_dir = safe_normalize(ray.dir);
             //TODO look into different random hemisphere generators
             //-1.0 is for glass
-            if(hit.material.smoothness == -1.0){
+            if(hit.material.smoothness < 0.0){
                 hit.material.color = vec4<f32>(1.0);
 
                 var front_face = false;
@@ -246,13 +264,15 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32>{
                 }else{
                     front_face = true;
                 }
-                //TODO get refraction_ratio from material 
-                var refraction_ratio = 1.5;
+                //TODO get refraction_ratio from material
+                // var refraction_ratio = 1.5;
+                var refraction_ratio = -hit.material.smoothness;
                 if(front_face){
                     refraction_ratio = 1.0/1.5;
                 }
-                
-                let cos_theta = min(dot(-unit_dir, hit.normal),1.0);
+
+                // let cos_theta = min(dot(-unit_dir, hit.normal),1.0);
+                let cos_theta = clamp(dot(-unit_dir, hit.normal), -1.0, 1.0);
                 let sin_theta = sqrt(1.0 - cos_theta*cos_theta);
 
                 let cannot_refract = refraction_ratio * sin_theta > 1.0;
@@ -267,7 +287,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32>{
                 let specular_dir = reflect(unit_dir, hit.normal);
                 ray.dir = mix(diffuse_dir,specular_dir,hit.material.smoothness);
             }
-            
+
             let emitted_light = hit.material.emission_color * hit.material.emission_strength;
             incoming_light += emitted_light * ray_color;
             ray_color *= hit.material.color;
@@ -312,7 +332,7 @@ fn frag(i: FragInput) -> vec4<f32>{
     for (var j = 0; j <= params.rays_per_pixel; j+=1){
         let anti_aliasing = vec2<f32>(rand(&rng_state),rand(&rng_state));
         let pos = (i.pos + anti_aliasing) / i.size;
-        
+
         let rd = camera.lens_radius * rand_in_unit_disk(&rng_state);
         let offset = camera.u * rd.x + camera.v * rd.y;
 
@@ -321,7 +341,10 @@ fn frag(i: FragInput) -> vec4<f32>{
         ray.dir = camera.lower_left_corner + pos.x * camera.horizontal + pos.y * camera.vertical - ray.origin;
 
         total_incoming_light += trace(ray, &rng_state);
-    } 
-
-    return total_incoming_light/f32(params.rays_per_pixel);
+    }
+    let color = total_incoming_light/f32(params.rays_per_pixel);
+    if (color.x != color.x || color.y != color.y || color.z != color.z){
+        return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+    }
+    return color;
 }

@@ -1,17 +1,32 @@
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{
+    process::exit,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use egui_wgpu::{wgpu::{self, util::DeviceExt, SurfaceError}, ScreenDescriptor};
-use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, KeyEvent, WindowEvent}, keyboard::PhysicalKey, window::Window};
+use egui_wgpu::{
+    ScreenDescriptor,
+    wgpu::{self, SurfaceError, util::DeviceExt},
+};
+use winit::{
+    application::ApplicationHandler,
+    dpi::PhysicalSize,
+    event::{DeviceEvent, KeyEvent, WindowEvent},
+    keyboard::PhysicalKey,
+    window::Window,
+};
 
-use crate::core::{egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture};
+use crate::core::{
+    egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
+};
 
 const WORKGROUP_SIZE: (u32, u32) = (8, 8);
 
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable,Debug)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 pub struct Params {
-    width : u32,
-    height : u32,
+    width: u32,
+    height: u32,
     number_of_bounces: i32,
     rays_per_pixel: i32,
     skybox: i32,
@@ -42,25 +57,27 @@ impl AppState {
         surface: wgpu::Surface<'static>,
         window: &Window,
         width: u32,
-        height: u32
+        height: u32,
     ) -> Self {
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions{
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: Some(&surface)
-        })
-        .await
-        .expect("Failed to find appropriate adapter");
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .expect("Failed to find appropriate adapter");
 
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor{
-            label: None,
-            required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
-            required_limits: Default::default(),
-            memory_hints: Default::default(),
-            trace: Default::default(), 
-        })
-        .await
-        .expect("Failed to find device");
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                required_limits: Default::default(),
+                memory_hints: Default::default(),
+                trace: Default::default(),
+            })
+            .await
+            .expect("Failed to find device");
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let selected_format = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -70,7 +87,7 @@ impl AppState {
             .find(|d| **d == selected_format)
             .expect("Failed to select proper surface texture format");
 
-        let surface_config = wgpu::SurfaceConfiguration{
+        let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: *swapchain_format,
             width,
@@ -87,8 +104,8 @@ impl AppState {
             width: surface_config.width,
             height: surface_config.height,
             number_of_bounces: 3,
-            rays_per_pixel: 1,
-            skybox: 0,
+            rays_per_pixel: 3,
+            skybox: 1,
             frames: 0,
             accumulate: 1,
         };
@@ -98,7 +115,12 @@ impl AppState {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let texture = Texture::new(&device, params.width, params.height, wgpu::TextureFormat::Rgba32Float);
+        let texture = Texture::new(
+            &device,
+            params.width,
+            params.height,
+            wgpu::TextureFormat::Rgba32Float,
+        );
 
         let renderer = Renderer::new(&device, &texture, &surface_config, &params_buffer);
         let scene = Scene::balls(&device, &surface_config);
@@ -108,7 +130,7 @@ impl AppState {
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
         let scale_factor = 1.0;
 
-        Self{
+        Self {
             device,
             queue,
             surface,
@@ -120,30 +142,30 @@ impl AppState {
             scene,
             texture,
             scale_factor,
-            selected_scene: 0,
+            selected_scene: 2,
             params_buffer,
-            prev_scene: 0,
+            prev_scene: 2,
             mouse_pressed: false,
         }
     }
 
-    fn resize_surface(&mut self, width: u32, height: u32){
+    fn resize_surface(&mut self, width: u32, height: u32) {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
     }
 }
 
-pub struct App{
+pub struct App {
     instance: wgpu::Instance,
     state: Option<AppState>,
     window: Option<Arc<Window>>,
     last_render_time: Instant,
 }
 
-impl App{
-    pub fn new() -> Self{
-        let instance  = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+impl App {
+    pub fn new() -> Self {
+        let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         Self {
             instance,
             state: None,
@@ -151,12 +173,12 @@ impl App{
             last_render_time: Instant::now(),
         }
     }
-    pub async fn set_window(&mut self, window: Window){
+    pub async fn set_window(&mut self, window: Window) {
         let window = Arc::new(window);
         let initial_width = 800;
         let initial_height = 800;
 
-        let _ = window.request_inner_size(PhysicalSize::new(initial_width,initial_height));
+        let _ = window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
 
         let surface = self
             .instance
@@ -168,68 +190,105 @@ impl App{
             surface,
             &window,
             initial_width,
-            initial_height
-        ).await;
+            initial_height,
+        )
+        .await;
 
         self.window.get_or_insert(window);
         self.state.get_or_insert(state);
     }
 
-    fn handle_resized(&mut self, width: u32, height: u32){
-        if width > 0 && height > 0{
+    fn handle_resized(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
             let state = self.state.as_mut().unwrap();
             state.resize_surface(width, height);
             state.surface_config.width = width;
             state.surface_config.height = height;
-            state.scene.camera.aspect = width as f32/ height as f32;
-            state.surface.configure(&state.device, &state.surface_config);
-            state.texture = Texture::new(&state.device,width,height,wgpu::TextureFormat::Rgba32Float);
+            state.scene.camera.aspect = width as f32 / height as f32;
+            state
+                .surface
+                .configure(&state.device, &state.surface_config);
+            state.texture = Texture::new(
+                &state.device,
+                width,
+                height,
+                wgpu::TextureFormat::Rgba32Float,
+            );
 
             state.params.width = width;
             state.params.height = height;
             state.params.frames = -1;
 
-            state.queue.write_buffer(&state.params_buffer, 0, bytemuck::cast_slice(&[state.params]));
-            state.ray_tracer.update_bind_group(&state.device,&state.params_buffer, &state.texture,&state.scene);
-            state.renderer.update_bind_group(&state.device, &state.params_buffer, &state.texture);
+            state.queue.write_buffer(
+                &state.params_buffer,
+                0,
+                bytemuck::cast_slice(&[state.params]),
+            );
+            state.ray_tracer.update_bind_group(
+                &state.device,
+                &state.params_buffer,
+                &state.texture,
+                &state.scene,
+            );
+            state
+                .renderer
+                .update_bind_group(&state.device, &state.params_buffer, &state.texture);
         }
     }
-    pub fn clear_accumulation(&mut self){
+    pub fn clear_accumulation(&mut self) {
         let state = self.state.as_mut().unwrap();
         state.params.frames = -1;
-        state.queue.write_buffer(&state.params_buffer, 0, bytemuck::cast_slice(&[state.params]));
+        state.queue.write_buffer(
+            &state.params_buffer,
+            0,
+            bytemuck::cast_slice(&[state.params]),
+        );
     }
 
-    pub fn update(&mut self, dt: Duration){
-
+    pub fn update(&mut self, dt: Duration) {
         let state = self.state.as_mut().unwrap();
         state.renderer.dt = dt;
         state.scene.camera.update_camera(dt);
         let uniform = state.scene.camera.to_uniform();
-        if state.params.accumulate != 0{
+        if state.params.accumulate != 0 {
             state.params.frames += 1;
-        }else{
+        } else {
             // Reset Accumulation
             state.params.frames = -1;
         }
-        state.queue.write_buffer(&state.scene.camera.buffer, 0, bytemuck::cast_slice(&[uniform]));
-        state.queue.write_buffer(&state.params_buffer, 0, bytemuck::cast_slice(&[state.params]));
+        state.queue.write_buffer(
+            &state.scene.camera.buffer,
+            0,
+            bytemuck::cast_slice(&[uniform]),
+        );
+        state.queue.write_buffer(
+            &state.params_buffer,
+            0,
+            bytemuck::cast_slice(&[state.params]),
+        );
     }
 
-    fn handle_input(&mut self, event: &WindowEvent) -> bool{
+    fn handle_input(&mut self, event: &WindowEvent) -> bool {
         let state = self.state.as_mut().unwrap();
-        match event{
-            WindowEvent::KeyboardInput { 
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(key),
-                    state: key_state,
-                    ..
-                },
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key),
+                        state: key_state,
+                        ..
+                    },
                 ..
-            } => state.scene.camera.controller.process_keyboard(*key , *key_state),
-            WindowEvent::MouseWheel { delta, .. } => state.scene.camera.controller.process_scroll(delta),
-            WindowEvent::MouseInput { 
-                button: winit::event::MouseButton::Left, 
+            } => state
+                .scene
+                .camera
+                .controller
+                .process_keyboard(*key, *key_state),
+            WindowEvent::MouseWheel { delta, .. } => {
+                state.scene.camera.controller.process_scroll(delta)
+            }
+            WindowEvent::MouseInput {
+                button: winit::event::MouseButton::Left,
                 state: button_state,
                 ..
             } => {
@@ -240,15 +299,22 @@ impl App{
         }
     }
 
-    fn handle_redraw(&mut self){
-
-        if self.state.as_ref().unwrap().scene.camera.controller.is_moving() {
+    fn handle_redraw(&mut self) {
+        if self
+            .state
+            .as_ref()
+            .unwrap()
+            .scene
+            .camera
+            .controller
+            .is_moving()
+        {
             self.clear_accumulation();
         }
         // Skip if window is minimized (maybe unwanted behaviour)
-        if let Some(window) = self.window.as_ref(){
-            if let Some(min) = window.is_minimized(){
-                if min{
+        if let Some(window) = self.window.as_ref() {
+            if let Some(min) = window.is_minimized() {
+                if min {
                     log::warn!("Skipping, Window minimised");
                     return;
                 }
@@ -257,9 +323,10 @@ impl App{
 
         let state = self.state.as_mut().unwrap();
 
-        let screen_descriptor = ScreenDescriptor{
+        let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [state.surface_config.width, state.surface_config.height],
-            pixels_per_point: self.window.as_ref().unwrap().scale_factor() as f32 * state.scale_factor,
+            pixels_per_point: self.window.as_ref().unwrap().scale_factor() as f32
+                * state.scale_factor,
         };
 
         let surface_texture = state.surface.get_current_texture();
@@ -288,7 +355,7 @@ impl App{
         let window = self.window.as_ref().unwrap();
         // Ray Tracer Pass
         {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor{
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("RayTracer Compute Pass"),
                 timestamp_writes: None,
             });
@@ -299,17 +366,17 @@ impl App{
 
             compute_pass.set_pipeline(&state.ray_tracer.pipeline);
             compute_pass.set_bind_group(0, &state.ray_tracer.bind_group, &[]);
-            compute_pass.dispatch_workgroups(xgroups,ygroups,1);
+            compute_pass.dispatch_workgroups(xgroups, ygroups, 1);
         }
 
         // Renderer Pass
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor{
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Renderer Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment{
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &surface_view,
                     resolve_target: None,
-                    ops: wgpu::Operations{
+                    ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
@@ -319,9 +386,12 @@ impl App{
                 occlusion_query_set: None,
             });
             render_pass.set_pipeline(&state.renderer.pipeline);
-            render_pass.set_bind_group(0, &state.renderer.bind_group,&[]);
+            render_pass.set_bind_group(0, &state.renderer.bind_group, &[]);
             render_pass.set_vertex_buffer(0, state.renderer.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(state.renderer.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_index_buffer(
+                state.renderer.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
             render_pass.draw_indexed(0..6, 0, 0..1);
         }
         {
@@ -333,62 +403,94 @@ impl App{
                 .resizable(true)
                 .vscroll(true)
                 .default_open(true)
-                .default_size([300.0,220.0])
-                .show(state.egui_renderer.context(), |ui|{
+                .default_size([300.0, 220.0])
+                .show(state.egui_renderer.context(), |ui| {
                     // ui.text(format!(
                     //     "Frame time: ({:#?})",
                     //     state.renderer.dt.as_millis() as f32
                     // ));
+                    ui.label(format!("Frame: {}", state.params.frames));
                     ui.label(format!(
-                        "Frame: {}",state.params.frames
+                        "FPS: {:.0}",
+                        1.0 / (100.0 * state.renderer.dt.as_secs_f64())
                     ));
-                    ui.label(format!(
-                        "Position: ({})",
-                        state.scene.camera.origin
-                    ));
-                    ui.label(format!(
-                        "Look At: ({})",
-                        state.scene.camera.look_at
-                    ));
-                    ui.add(egui::Slider::new(&mut state.params.number_of_bounces,0..=100).text("Bounces"));
-                    ui.add(egui::Slider::new(&mut state.params.rays_per_pixel,0..=100).text("Rays Per Pixel"));
+                    ui.label(format!("Position: ({})", state.scene.camera.origin));
+                    ui.label(format!("Look At: ({})", state.scene.camera.look_at));
+                    ui.add(
+                        egui::Slider::new(&mut state.params.number_of_bounces, 0..=100)
+                            .text("Bounces"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut state.params.rays_per_pixel, 0..=100)
+                            .text("Rays Per Pixel"),
+                    );
                     // ui.label("Skybox");
-                    ui.checkbox(&mut skybox,"Skybox");
+                    ui.checkbox(&mut skybox, "Skybox");
                     // ui.label("Accumulate");
                     ui.checkbox(&mut accumulate, "Accumulate");
-                    
-                    ui.add(egui::Slider::new(&mut state.scene.camera.focus_dist,0.0..=10.0).text("Focus Distance"));
-                    ui.add(egui::Slider::new(&mut state.scene.camera.aperture,-2.0..=2.0).text("Aperture"));
-                    ui.add(egui::Slider::new(&mut state.selected_scene,0..=3).text("Scene ID"));
+
+                    ui.add(
+                        egui::Slider::new(&mut state.scene.camera.focus_dist, 0.0..=10.0)
+                            .text("Focus Distance"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut state.scene.camera.aperture, -2.0..=2.0)
+                            .text("Aperture"),
+                    );
+                    ui.add(egui::Slider::new(&mut state.selected_scene, 0..=3).text("Scene ID"));
                 });
-            
-            if !(state.selected_scene==state.prev_scene){
-                log::info!("Changing Scene: {}",state.selected_scene);
-                match state.selected_scene{
+
+            if !(state.selected_scene == state.prev_scene) {
+                log::info!("Changing Scene: {}", state.selected_scene);
+                match state.selected_scene {
                     0 => {
                         state.scene = Scene::balls(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(&state.device,&state.texture, &state.params_buffer, &state.scene);
+                        state.ray_tracer = RayTracer::new(
+                            &state.device,
+                            &state.texture,
+                            &state.params_buffer,
+                            &state.scene,
+                        );
                     }
                     1 => {
                         state.scene = Scene::random_balls(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(&state.device,&state.texture, &state.params_buffer, &state.scene);
+                        state.ray_tracer = RayTracer::new(
+                            &state.device,
+                            &state.texture,
+                            &state.params_buffer,
+                            &state.scene,
+                        );
                     }
                     2 => {
                         state.scene = Scene::room(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(&state.device,&state.texture, &state.params_buffer, &state.scene);
+                        state.ray_tracer = RayTracer::new(
+                            &state.device,
+                            &state.texture,
+                            &state.params_buffer,
+                            &state.scene,
+                        );
                     }
                     3 => {
                         state.scene = Scene::metal(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(&state.device,&state.texture, &state.params_buffer, &state.scene);
+                        state.ray_tracer = RayTracer::new(
+                            &state.device,
+                            &state.texture,
+                            &state.params_buffer,
+                            &state.scene,
+                        );
                     }
-                    _ => ()
+                    _ => (),
                 }
                 state.params.frames = -1;
-                state.queue.write_buffer(&state.params_buffer, 0, bytemuck::cast_slice(&[state.params]));
+                state.queue.write_buffer(
+                    &state.params_buffer,
+                    0,
+                    bytemuck::cast_slice(&[state.params]),
+                );
             }
             state.prev_scene = state.selected_scene;
             state.params.skybox = skybox as i32;
-            state.params.accumulate = accumulate as i32;           
+            state.params.accumulate = accumulate as i32;
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,
@@ -402,10 +504,11 @@ impl App{
 
         state.queue.submit(Some(encoder.finish()));
         surface_texture.present();
+        self.last_render_time = Instant::now();
     }
 }
 
-impl ApplicationHandler for App{
+impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window = event_loop
             .create_window(Window::default_attributes())
@@ -413,32 +516,44 @@ impl ApplicationHandler for App{
         pollster::block_on(self.set_window(window));
     }
     fn device_event(
-            &mut self,
-            _event_loop: &winit::event_loop::ActiveEventLoop,
-            _device_id: winit::event::DeviceId,
-            event: winit::event::DeviceEvent,
-        ) {
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
         let state = self.state.as_mut().unwrap();
         match event {
-            DeviceEvent::MouseMotion{delta,} => if state.mouse_pressed{
-                state.scene.camera.controller.process_mouse(delta.0,delta.1);
-                self.clear_accumulation();
+            DeviceEvent::MouseMotion { delta } => {
+                if state.mouse_pressed {
+                    state
+                        .scene
+                        .camera
+                        .controller
+                        .process_mouse(delta.0, delta.1);
+                    self.clear_accumulation();
+                }
             }
-            _ => {},
+            _ => {}
         }
     }
     fn window_event(
-            &mut self,
-            event_loop: &winit::event_loop::ActiveEventLoop,
-            _: winit::window::WindowId,
-            event: winit::event::WindowEvent,
-        ) {
-        if !self.state.as_mut().unwrap().egui_renderer.handle_input(self.window.as_ref().unwrap(), &event){
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        if !self
+            .state
+            .as_mut()
+            .unwrap()
+            .egui_renderer
+            .handle_input(self.window.as_ref().unwrap(), &event)
+        {
             self.handle_input(&event);
         }
 
-        match event { 
-            WindowEvent::CloseRequested =>{
+        match event {
+            WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
@@ -451,7 +566,7 @@ impl ApplicationHandler for App{
             WindowEvent::Resized(new_size) => {
                 self.handle_resized(new_size.width, new_size.height);
             }
-            _ => ()
+            _ => (),
         }
     }
 }

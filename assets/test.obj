@@ -1,0 +1,15 @@
+# Simple triangle with normals
+
+# Vertex positions (x, y, z)
+v 3.0 -3.0 -3.0
+v 3.0 -3.0 3.0
+v -3.0 -3.0 3.0
+
+# Vertex normals (nx, ny, nz)
+vn 2.0 -3.0 -3.0
+vn 4.0 -3.0 0.0
+vn 3.0 -4.0 2.0
+
+# Face (triangle) using vertices and normals
+# Format: vertex_index//normal_index
+f 1//1 2//2 3//3
