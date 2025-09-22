@@ -67,7 +67,7 @@ impl Camera {
             contents: bytemuck::bytes_of(&uniform),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let controller = CameraController::new(10000.0, 30.0);
+        let controller = CameraController::new(600.0, 1.8);
 
         Camera {
             origin: camera_descriptor.origin,
@@ -84,27 +84,15 @@ impl Camera {
         }
     }
     pub fn to_uniform(&mut self) -> CameraUniform {
-        // let theta = radians(self.fov);
-        // let half_height = self.near * f32::tan(theta/ 2.0);
-        // let half_width = self.aspect * half_height;
-        // let w = (self.origin - self.look_at).normalize();
-        // let u = self.view_up.cross(w).normalize();
-        // let v = w.cross(u);
-        // let horizontal = 2.0 * half_width * u;
-        // let vertical = 2.0 * half_height * v;
-        // let lower_left_corner = self.origin - half_width * u - half_height * v - self.near * w;
-
         let theta = radians(self.fov);
-        let height = 2.0 * f32::tan(theta / 2.0);
-        let width = self.aspect * height;
+        let half_height = self.near * f32::tan(theta / 2.0);
+        let half_width = self.aspect * half_height;
         let w = (self.origin - self.look_at).normalize();
         let u = self.view_up.cross(w).normalize();
         let v = w.cross(u);
-
-        let horizontal = self.focus_dist * width * u;
-        let vertical = self.focus_dist * height * v;
-        let lower_left_corner =
-            self.origin - horizontal / 2.0 - vertical / 2.0 - self.focus_dist * w;
+        let horizontal = 2.0 * half_width * u;
+        let vertical = 2.0 * half_height * v;
+        let lower_left_corner = self.origin - half_width * u - half_height * v - self.near * w;
 
         CameraUniform {
             origin: self.origin.to_array(),

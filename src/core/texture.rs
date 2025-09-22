@@ -7,8 +7,8 @@ pub struct Texture {
 impl Texture {
     pub fn new(
         device: &wgpu::Device,
-        width:u32,
-        height:u32,
+        width: u32,
+        height: u32,
         format: wgpu::TextureFormat,
     ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -27,19 +27,17 @@ impl Texture {
         });
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        Texture {
-            texture_view,
-        }
+        Texture { texture_view }
     }
 
     pub fn binding_resource(&'_ self) -> wgpu::BindingResource<'_> {
         wgpu::BindingResource::TextureView(&self.texture_view)
     }
+    pub fn texture_view(&self) -> &wgpu::TextureView {
+        &self.texture_view
+    }
 
-    pub fn binding_type(
-        &self,
-        access: wgpu::StorageTextureAccess
-    ) -> wgpu::BindingType {
+    pub fn binding_type(&self, access: wgpu::StorageTextureAccess) -> wgpu::BindingType {
         wgpu::BindingType::StorageTexture {
             access,
             format: wgpu::TextureFormat::Rgba32Float,

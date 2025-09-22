@@ -1,5 +1,4 @@
 use std::{
-    process::exit,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -20,7 +19,7 @@ use crate::core::{
     egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
 };
 
-const WORKGROUP_SIZE: (u32, u32) = (8, 8);
+const WORKGROUP_SIZE: (u32, u32) = (16, 16);
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
@@ -128,7 +127,6 @@ impl AppState {
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer, &scene);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
-        let scale_factor = 1.0;
 
         Self {
             device,
@@ -141,10 +139,10 @@ impl AppState {
             params,
             scene,
             texture,
-            scale_factor,
-            selected_scene: 2,
+            scale_factor: 1.0,
+            selected_scene: 0,
             params_buffer,
-            prev_scene: 2,
+            prev_scene: 0,
             mouse_pressed: false,
         }
     }
@@ -249,7 +247,7 @@ impl App {
         let state = self.state.as_mut().unwrap();
         state.renderer.dt = dt;
         state.scene.camera.update_camera(dt);
-        let uniform = state.scene.camera.to_uniform();
+        let camera_uniform = state.scene.camera.to_uniform();
         if state.params.accumulate != 0 {
             state.params.frames += 1;
         } else {
@@ -259,7 +257,7 @@ impl App {
         state.queue.write_buffer(
             &state.scene.camera.buffer,
             0,
-            bytemuck::cast_slice(&[uniform]),
+            bytemuck::cast_slice(&[camera_uniform]),
         );
         state.queue.write_buffer(
             &state.params_buffer,
@@ -394,28 +392,27 @@ impl App {
             );
             render_pass.draw_indexed(0..6, 0, 0..1);
         }
+        // RENDER EGUI
         {
             state.egui_renderer.begin_frame(window);
 
             let mut skybox = state.params.skybox != 0;
             let mut accumulate = state.params.accumulate != 0;
-            egui::Window::new("Camera Info")
+
+            egui::Window::new("Viewport")
                 .resizable(true)
                 .vscroll(true)
                 .default_open(true)
-                .default_size([300.0, 220.0])
+                .default_size([300.0, 260.0])
                 .show(state.egui_renderer.context(), |ui| {
-                    // ui.text(format!(
-                    //     "Frame time: ({:#?})",
-                    //     state.renderer.dt.as_millis() as f32
-                    // ));
                     ui.label(format!("Frame: {}", state.params.frames));
                     ui.label(format!(
                         "FPS: {:.0}",
-                        1.0 / (100.0 * state.renderer.dt.as_secs_f64())
+                        1.0 / (1.0 * state.renderer.dt.as_secs_f64()) // state.renderer.dt.as_micros()
                     ));
                     ui.label(format!("Position: ({})", state.scene.camera.origin));
                     ui.label(format!("Look At: ({})", state.scene.camera.look_at));
+                    ui.add(egui::Slider::new(&mut state.scene.camera.fov, 10.0..=90.0).text("Fov"));
                     ui.add(
                         egui::Slider::new(&mut state.params.number_of_bounces, 0..=100)
                             .text("Bounces"),
@@ -438,6 +435,9 @@ impl App {
                             .text("Aperture"),
                     );
                     ui.add(egui::Slider::new(&mut state.selected_scene, 0..=3).text("Scene ID"));
+                    if ui.button("Delete shpere").clicked() {
+                        println!("CLicked");
+                    }
                 });
 
             if !(state.selected_scene == state.prev_scene) {
@@ -504,7 +504,6 @@ impl App {
 
         state.queue.submit(Some(encoder.finish()));
         surface_texture.present();
-        self.last_render_time = Instant::now();
     }
 }
 
@@ -557,16 +556,19 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                let dt = now - self.last_render_time;
-                self.update(dt);
                 self.handle_redraw();
-                self.window.as_ref().unwrap().request_redraw();
             }
             WindowEvent::Resized(new_size) => {
                 self.handle_resized(new_size.width, new_size.height);
             }
             _ => (),
         }
+    }
+    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        let now = Instant::now();
+        let dt = now - self.last_render_time;
+        self.last_render_time = now;
+        self.update(dt);
+        self.window.as_ref().unwrap().request_redraw();
     }
 }

@@ -59,7 +59,6 @@ impl Renderer{
                 wgpu::BindGroupLayoutEntry{
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    // ty: texture.binding_type(wgpu::StorageTextureAccess::ReadOnly),
                     ty: wgpu::BindingType::Texture{
                         sample_type: wgpu::TextureSampleType::Float {filterable: false},
                         view_dimension: wgpu::TextureViewDimension::D2,

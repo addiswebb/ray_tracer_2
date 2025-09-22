@@ -1,10 +1,9 @@
 use std::{
     io::{BufReader, Cursor},
     path::Path,
-    result::{self, Result},
 };
 
-use egui::ahash::{AHashMap, HashMap};
+use egui::ahash::AHashMap;
 use egui_wgpu::wgpu::{self, util::DeviceExt};
 use glam::{Vec3, Vec4};
 use rand::Rng;
