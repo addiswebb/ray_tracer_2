@@ -55,15 +55,23 @@ impl Sphere {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
-struct Material {
+pub struct Material {
     color: [f32; 4],
     emission_color: [f32; 4],
     emission_strength: f32,
 }
 
+pub struct NewMesh {
+    pub position: Vec3,
+    pub size: Vec3,
+    pub material: Material,
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
-pub struct Mesh {
+pub struct MeshUniform {
     pub first: u32,
     pub triangles: u32,
     pub offset: u32,
@@ -77,7 +85,7 @@ pub struct Mesh {
     pub _padding3: [f32; 2],
 }
 
-impl Mesh {
+impl MeshUniform {
     pub fn new(
         pos: Vec3,
         first: u32,

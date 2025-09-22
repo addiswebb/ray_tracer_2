@@ -10,7 +10,7 @@ use rand::Rng;
 
 use crate::core::{
     camera::{CameraDescriptor, CameraUniform},
-    mesh::{Mesh, Sphere, Vertex},
+    mesh::{MeshUniform, Sphere, Vertex},
 };
 
 use super::camera::Camera;
@@ -20,7 +20,7 @@ pub struct Scene {
     pub spheres: Vec<Sphere>,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
-    pub meshes: Vec<Mesh>,
+    pub meshes: Vec<MeshUniform>,
 }
 
 #[repr(C)]
@@ -79,7 +79,7 @@ impl Scene {
 
         let mut vertices: Vec<Vertex> = vec![];
         let mut indices: Vec<u32> = vec![];
-        let mut meshes: Vec<Mesh> = vec![];
+        let mut meshes: Vec<MeshUniform> = vec![];
 
         let _ = load_model_obj(
             Path::new("Suzanne.obj"),
@@ -187,7 +187,7 @@ impl Scene {
             Vec3::new(2.0, -3.0, -1.0),
         )];
         let indices = vec![1u32];
-        let meshes = vec![Mesh::new(
+        let meshes = vec![MeshUniform::new(
             Vec3::new(0.0, 0.0, 0.0),
             0,
             0,
@@ -197,6 +197,10 @@ impl Scene {
             0.0,
             0.5,
         )];
+        println!("{:#?}", vertices.len());
+        println!("{:#?}", indices.len());
+        println!("{:#?}", meshes.len());
+        println!("{:#?}", spheres.len());
         Self {
             camera,
             spheres,
@@ -260,7 +264,7 @@ impl Scene {
         ];
         #[allow(unused_mut)]
         let mut meshes = vec![
-            Mesh::new(
+            MeshUniform::new(
                 Vec3::new(3.0, 0.0, 0.0),
                 0,
                 2,
@@ -270,7 +274,7 @@ impl Scene {
                 0.0,
                 0.5,
             ),
-            Mesh::new(
+            MeshUniform::new(
                 Vec3::new(3.0, 0.0, 0.0),
                 6,
                 2,
@@ -280,7 +284,7 @@ impl Scene {
                 0.0,
                 0.5,
             ),
-            Mesh::new(
+            MeshUniform::new(
                 Vec3::new(3.0, 0.0, 0.0),
                 12,
                 2,
@@ -290,7 +294,7 @@ impl Scene {
                 0.0,
                 0.5,
             ),
-            Mesh::new(
+            MeshUniform::new(
                 Vec3::new(3.0, 0.0, 0.0),
                 18,
                 2,
@@ -300,7 +304,7 @@ impl Scene {
                 0.0,
                 0.5,
             ),
-            Mesh::new(
+            MeshUniform::new(
                 Vec3::new(3.0, 0.0, 0.0),
                 24,
                 2,
@@ -310,7 +314,7 @@ impl Scene {
                 0.0,
                 0.5,
             ),
-            Mesh::new(
+            MeshUniform::new(
                 Vec3::new(3.0, 0.0, 0.0),
                 30,
                 2,
@@ -320,7 +324,7 @@ impl Scene {
                 0.0,
                 0.5,
             ),
-            Mesh::new(
+            MeshUniform::new(
                 Vec3::new(3.0, 1.9, 0.0),
                 36,
                 2,
@@ -397,7 +401,7 @@ impl Scene {
             Vec3::new(2.0, -3.0, -1.0),
         )];
         let indices = vec![1u32];
-        let meshes = vec![Mesh::new(
+        let meshes = vec![MeshUniform::new(
             Vec3::new(0.0, 0.0, 0.0),
             0,
             0,
@@ -485,7 +489,7 @@ impl Scene {
             Vec3::new(2.0, -3.0, -1.0),
         )];
         let indices = vec![1u32];
-        let meshes = vec![Mesh::new(
+        let meshes = vec![MeshUniform::new(
             Vec3::new(0.0, 0.0, 0.0),
             0,
             0,
@@ -564,7 +568,7 @@ pub async fn load_model_obj(
     path: &Path,
     indices: &mut Vec<u32>,
     vertices: &mut Vec<Vertex>,
-    meshes: &mut Vec<Mesh>,
+    meshes: &mut Vec<MeshUniform>,
 ) -> anyhow::Result<bool> {
     let path = std::path::Path::new(FILE).join("assets").join(path);
 
@@ -601,7 +605,7 @@ pub async fn load_model_obj(
             indices.push(index as u32);
         }
 
-        meshes.push(Mesh::new(
+        meshes.push(MeshUniform::new(
             Vec3::new(5.0, 0.0, 0.0),
             first,
             (m.mesh.positions.len() / 3) as u32 - 1,

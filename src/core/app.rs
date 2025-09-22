@@ -5,7 +5,7 @@ use std::{
 
 use egui_wgpu::{
     ScreenDescriptor,
-    wgpu::{self, SurfaceError, util::DeviceExt},
+    wgpu::{self, SurfaceError, naga::RayQueryIntersection, util::DeviceExt},
 };
 use winit::{
     application::ApplicationHandler,
@@ -206,13 +206,7 @@ impl App {
             state
                 .surface
                 .configure(&state.device, &state.surface_config);
-            state.texture = Texture::new(
-                &state.device,
-                width,
-                height,
-                wgpu::TextureFormat::Rgba32Float,
-            );
-
+            
             state.params.width = width;
             state.params.height = height;
             state.params.frames = -1;
@@ -222,7 +216,15 @@ impl App {
                 0,
                 bytemuck::cast_slice(&[state.params]),
             );
-            state.ray_tracer.update_buffers(&state.queue, &state.scene);
+            state.texture = Texture::new(
+                            &state.device,
+                            width,
+                            height,
+                            wgpu::TextureFormat::Rgba32Float,
+                        );
+            state
+                .ray_tracer
+                .resize(&state.device, &state.texture, &state.params_buffer);
             state
                 .renderer
                 .update_bind_group(&state.device, &state.params_buffer, &state.texture);

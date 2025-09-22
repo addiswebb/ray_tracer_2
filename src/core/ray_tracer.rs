@@ -5,7 +5,7 @@ use egui_wgpu::wgpu::{self, PipelineCompilationOptions};
 use crate::core::{
     app::Params,
     camera::CameraUniform,
-    mesh::{Mesh, Sphere, Vertex},
+    mesh::{MeshUniform, Sphere, Vertex},
     scene::{Scene, SceneUniform},
     texture::Texture,
 };
@@ -13,6 +13,7 @@ use crate::core::{
 pub struct RayTracer {
     pub pipeline: wgpu::ComputePipeline,
     pub bind_group: wgpu::BindGroup,
+    bind_group_layout: wgpu::BindGroupLayout,
     pub sphere_buffer: wgpu::Buffer,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
@@ -135,7 +136,7 @@ impl RayTracer {
             mapped_at_creation: false,
         });
 
-        let max_spheres = 6;
+        let max_spheres = 500;
         let sphere_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Sphere Buffer"),
             size: (max_spheres * std::mem::size_of::<Sphere>() as wgpu::BufferAddress),
@@ -147,7 +148,7 @@ impl RayTracer {
         let max_meshes = 10;
         let mesh_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Mesh Buffer"),
-            size: (max_meshes * std::mem::size_of::<Mesh>() as wgpu::BufferAddress),
+            size: (max_meshes * std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::UNIFORM
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::STORAGE,
@@ -206,6 +207,7 @@ impl RayTracer {
         Self {
             pipeline,
             bind_group,
+            bind_group_layout,
             vertex_buffer,
             index_buffer,
             sphere_buffer,
@@ -227,5 +229,47 @@ impl RayTracer {
             0,
             bytemuck::cast_slice(&[scene.to_uniform()]),
         );
+    }
+
+    pub fn resize(
+        &mut self,
+        device: &wgpu::Device,
+        texture: &Texture,
+        params_buffer: &wgpu::Buffer,
+    ) {
+        self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("RayTracer Bind Group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.scene_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: texture.binding_resource(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.sphere_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.vertex_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.index_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.mesh_buffer.as_entire_binding(),
+                },
+            ],
+        });
     }
 }
