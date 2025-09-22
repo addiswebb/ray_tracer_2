@@ -43,7 +43,6 @@ pub struct Camera {
     pub far: f32,
     pub aperture: f32,
     pub focus_dist: f32,
-    pub buffer: wgpu::Buffer,
     pub controller: CameraController,
 }
 
@@ -59,16 +58,7 @@ pub struct CameraDescriptor {
     pub focus_dist: f32,
 }
 impl Camera {
-    pub fn new(device: &wgpu::Device, camera_descriptor: &CameraDescriptor) -> Self {
-        let uniform = CameraUniform::default();
-
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera buffer"),
-            contents: bytemuck::bytes_of(&uniform),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let controller = CameraController::new(600.0, 1.8);
-
+    pub fn new(camera_descriptor: &CameraDescriptor) -> Self {
         Camera {
             origin: camera_descriptor.origin,
             look_at: camera_descriptor.look_at,
@@ -79,11 +69,10 @@ impl Camera {
             far: camera_descriptor.far,
             aperture: camera_descriptor.aperture,
             focus_dist: camera_descriptor.focus_dist,
-            buffer,
-            controller,
+            controller: CameraController::new(600.0, 1.8),
         }
     }
-    pub fn to_uniform(&mut self) -> CameraUniform {
+    pub fn to_uniform(&self) -> CameraUniform {
         let theta = radians(self.fov);
         let half_height = self.near * f32::tan(theta / 2.0);
         let half_width = self.aspect * half_height;

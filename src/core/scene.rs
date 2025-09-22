@@ -9,52 +9,11 @@ use glam::{Vec3, Vec4};
 use rand::Rng;
 
 use crate::core::{
-    camera::CameraDescriptor,
-    mesh::{Mesh, Vertex},
+    camera::{CameraDescriptor, CameraUniform},
+    mesh::{Mesh, Sphere, Vertex},
 };
 
 use super::camera::Camera;
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
-pub struct Sphere {
-    position: [f32; 3],
-    radius: f32,
-    color: [f32; 4],
-    emission_color: [f32; 4],
-    emission_strength: f32,
-    smoothness: f32,
-    _padding: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
-struct Material {
-    color: [f32; 4],
-    emission_color: [f32; 4],
-    emission_strength: f32,
-}
-
-impl Sphere {
-    pub fn new(
-        position: Vec3,
-        radius: f32,
-        color: Vec4,
-        emission_color: Vec4,
-        emission_strength: f32,
-        specular: f32,
-    ) -> Self {
-        Self {
-            position: position.to_array(),
-            radius,
-            color: color.to_array(),
-            emission_color: emission_color.to_array(),
-            emission_strength,
-            _padding: [0.0; 2],
-            smoothness: if specular < 1.0 { specular } else { 1.0 },
-        }
-    }
-}
 
 pub struct Scene {
     pub camera: Camera,
@@ -64,23 +23,30 @@ pub struct Scene {
     pub meshes: Vec<Mesh>,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+pub struct SceneUniform {
+    spheres: u32,
+    vertices: u32,
+    indices: u32,
+    meshes: u32,
+    camera: CameraUniform,
+}
+
 #[allow(dead_code)]
 impl Scene {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(
-            &device,
-            &CameraDescriptor {
-                origin: Vec3::ZERO,
-                look_at: Vec3::ZERO,
-                view_up: Vec3::new(0.0, 1.0, 0.0),
-                fov: 45.0,
-                aspect: config.width as f32 / config.height as f32,
-                near: 0.1,
-                far: 100.0,
-                aperture: 1.0,
-                focus_dist: 2.0,
-            },
-        );
+    pub fn new(config: &wgpu::SurfaceConfiguration) -> Self {
+        let camera = Camera::new(&CameraDescriptor {
+            origin: Vec3::ZERO,
+            look_at: Vec3::ZERO,
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 1.0,
+            focus_dist: 2.0,
+        });
         Self {
             camera,
             spheres: vec![],
@@ -89,21 +55,18 @@ impl Scene {
             meshes: vec![],
         }
     }
-    pub async fn obj_test(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(
-            &device,
-            &CameraDescriptor {
-                origin: Vec3::new(0.0, 0.0, 0.0),
-                look_at: Vec3::new(1.0, 0.0, 0.0),
-                view_up: Vec3::new(0.0, 1.0, 0.0),
-                fov: 45.0,
-                aspect: config.width as f32 / config.height as f32,
-                near: 0.1,
-                far: 100.0,
-                aperture: 0.0,
-                focus_dist: 1.0,
-            },
-        );
+    pub async fn obj_test(config: &wgpu::SurfaceConfiguration) -> Self {
+        let camera = Camera::new(&CameraDescriptor {
+            origin: Vec3::new(0.0, 0.0, 0.0),
+            look_at: Vec3::new(1.0, 0.0, 0.0),
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 0.0,
+            focus_dist: 1.0,
+        });
 
         let spheres = vec![Sphere::new(
             Vec3::new(4.0, 1.0, 0.0),
@@ -135,21 +98,18 @@ impl Scene {
             meshes,
         }
     }
-    pub fn random_balls(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(
-            &device,
-            &CameraDescriptor {
-                origin: Vec3::new(13.0, 2.0, 3.0),
-                look_at: Vec3::new(0.0, 0.0, 0.0),
-                view_up: Vec3::new(0.0, 1.0, 0.0),
-                fov: 20.0,
-                aspect: config.width as f32 / config.height as f32,
-                near: 0.1,
-                far: 100.0,
-                aperture: 0.1,
-                focus_dist: 10.0,
-            },
-        );
+    pub fn random_balls(config: &wgpu::SurfaceConfiguration) -> Self {
+        let camera = Camera::new(&CameraDescriptor {
+            origin: Vec3::new(13.0, 2.0, 3.0),
+            look_at: Vec3::new(0.0, 0.0, 0.0),
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 20.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 0.1,
+            focus_dist: 10.0,
+        });
         let mut spheres: Vec<Sphere> = vec![
             // Floor
             Sphere::new(
@@ -245,21 +205,18 @@ impl Scene {
             meshes,
         }
     }
-    pub fn room(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(
-            &device,
-            &CameraDescriptor {
-                origin: Vec3::new(-7.0, 0.0, 0.0),
-                look_at: Vec3::new(1.0, 0.0, 0.0),
-                view_up: Vec3::new(0.0, 1.0, 0.0),
-                fov: 45.0,
-                aspect: config.width as f32 / config.height as f32,
-                near: 0.1,
-                far: 100.0,
-                aperture: 0.0,
-                focus_dist: 0.1,
-            },
-        );
+    pub fn room(config: &wgpu::SurfaceConfiguration) -> Self {
+        let camera = Camera::new(&CameraDescriptor {
+            origin: Vec3::new(-7.0, 0.0, 0.0),
+            look_at: Vec3::new(1.0, 0.0, 0.0),
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 0.0,
+            focus_dist: 0.1,
+        });
 
         let spheres = vec![
             Sphere::new(
@@ -308,7 +265,7 @@ impl Scene {
                 0,
                 2,
                 0,
-                Vec4::new(1.0, 0.0, 0.0, 1.0),
+                Vec4::new(0.8, 0.2, 0.2, 1.0),
                 Vec4::new(1.0, 1.0, 1.0, 1.0),
                 0.0,
                 0.5,
@@ -318,7 +275,7 @@ impl Scene {
                 6,
                 2,
                 0,
-                Vec4::new(0.0, 1.0, 0.0, 1.0),
+                Vec4::new(0.2, 0.8, 0.2, 1.0),
                 Vec4::new(1.0, 1.0, 1.0, 1.0),
                 0.0,
                 0.5,
@@ -328,7 +285,7 @@ impl Scene {
                 12,
                 2,
                 0,
-                Vec4::new(0.0, 0.0, 1.0, 1.0),
+                Vec4::new(0.2, 0.2, 0.8, 1.0),
                 Vec4::new(1.0, 1.0, 1.0, 1.0),
                 0.0,
                 0.5,
@@ -338,7 +295,7 @@ impl Scene {
                 18,
                 2,
                 0,
-                Vec4::new(0.5, 0.5, 0.0, 1.0),
+                Vec4::new(0.5, 0.5, 0.1, 1.0),
                 Vec4::new(1.0, 1.0, 1.0, 1.0),
                 0.0,
                 0.5,
@@ -383,25 +340,22 @@ impl Scene {
             meshes,
         }
     }
-    pub fn metal(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+    pub fn metal(config: &wgpu::SurfaceConfiguration) -> Self {
         // let lookfrom= Vec3::new(3.0,3.0,2.0);
         // let lookat = Vec3::new(0.0,0.0,-1.0);
         // let length = (lookfrom - lookat).length();
 
-        let camera = Camera::new(
-            &device,
-            &CameraDescriptor {
-                origin: Vec3::new(0.0, 0.0, 3.0),
-                look_at: Vec3::new(0.0, 0.0, -1.0),
-                view_up: Vec3::new(0.0, 1.0, 0.0),
-                fov: 45.0,
-                aspect: config.width as f32 / config.height as f32,
-                near: 0.1,
-                far: 100.0,
-                aperture: 0.0,
-                focus_dist: 0.1,
-            },
-        );
+        let camera = Camera::new(&CameraDescriptor {
+            origin: Vec3::new(0.0, 0.0, 3.0),
+            look_at: Vec3::new(0.0, 0.0, -1.0),
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 0.0,
+            focus_dist: 0.1,
+        });
         let spheres = vec![
             //floor
             Sphere::new(
@@ -461,21 +415,18 @@ impl Scene {
             meshes,
         }
     }
-    pub fn balls(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(
-            &device,
-            &CameraDescriptor {
-                origin: Vec3::new(3.089, 1.53, -3.0),
-                look_at: Vec3::new(-2.0, -1.0, 2.0),
-                view_up: Vec3::new(0.0, 1.0, 0.0),
-                fov: 45.0,
-                aspect: config.width as f32 / config.height as f32,
-                near: 0.1,
-                far: 100.0,
-                aperture: 0.0,
-                focus_dist: 0.1,
-            },
-        );
+    pub fn balls(config: &wgpu::SurfaceConfiguration) -> Self {
+        let camera = Camera::new(&CameraDescriptor {
+            origin: Vec3::new(3.089, 1.53, -3.0),
+            look_at: Vec3::new(-2.0, -1.0, 2.0),
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 0.0,
+            focus_dist: 0.1,
+        });
 
         let spheres = vec![
             Sphere::new(
@@ -575,43 +526,14 @@ impl Scene {
         }
     }
 
-    pub fn sphere_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sphere Buffer"),
-            contents: bytemuck::cast_slice(&self.spheres),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
-        })
-    }
-    pub fn vertex_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&self.vertices),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
-        })
-    }
-
-    pub fn index_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&self.indices),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
-        })
-    }
-
-    pub fn mesh_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Mesh Buffer"),
-            contents: bytemuck::cast_slice(&self.meshes),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
-        })
+    pub fn to_uniform(&self) -> SceneUniform {
+        SceneUniform {
+            spheres: self.spheres.len() as u32,
+            vertices: self.vertices.len() as u32,
+            indices: self.indices.len() as u32,
+            meshes: self.meshes.len() as u32,
+            camera: self.camera.to_uniform(),
+        }
     }
 }
 

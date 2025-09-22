@@ -122,9 +122,9 @@ impl AppState {
         );
 
         let renderer = Renderer::new(&device, &texture, &surface_config, &params_buffer);
-        let scene = Scene::balls(&device, &surface_config);
+        let scene = Scene::balls(&surface_config);
 
-        let ray_tracer = RayTracer::new(&device, &texture, &params_buffer, &scene);
+        let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -222,12 +222,7 @@ impl App {
                 0,
                 bytemuck::cast_slice(&[state.params]),
             );
-            state.ray_tracer.update_bind_group(
-                &state.device,
-                &state.params_buffer,
-                &state.texture,
-                &state.scene,
-            );
+            state.ray_tracer.update_buffers(&state.queue, &state.scene);
             state
                 .renderer
                 .update_bind_group(&state.device, &state.params_buffer, &state.texture);
@@ -247,7 +242,6 @@ impl App {
         let state = self.state.as_mut().unwrap();
         state.renderer.dt = dt;
         state.scene.camera.update_camera(dt);
-        let camera_uniform = state.scene.camera.to_uniform();
         if state.params.accumulate != 0 {
             state.params.frames += 1;
         } else {
@@ -255,15 +249,11 @@ impl App {
             state.params.frames = -1;
         }
         state.queue.write_buffer(
-            &state.scene.camera.buffer,
-            0,
-            bytemuck::cast_slice(&[camera_uniform]),
-        );
-        state.queue.write_buffer(
             &state.params_buffer,
             0,
             bytemuck::cast_slice(&[state.params]),
         );
+        state.ray_tracer.update_buffers(&state.queue, &state.scene);
     }
 
     fn handle_input(&mut self, event: &WindowEvent) -> bool {
@@ -277,11 +267,13 @@ impl App {
                         ..
                     },
                 ..
-            } => state
-                .scene
-                .camera
-                .controller
-                .process_keyboard(*key, *key_state),
+            } => match key {
+                _ => state
+                    .scene
+                    .camera
+                    .controller
+                    .process_keyboard(*key, *key_state),
+            },
             WindowEvent::MouseWheel { delta, .. } => {
                 state.scene.camera.controller.process_scroll(delta)
             }
@@ -436,7 +428,9 @@ impl App {
                     );
                     ui.add(egui::Slider::new(&mut state.selected_scene, 0..=3).text("Scene ID"));
                     if ui.button("Delete shpere").clicked() {
-                        println!("CLicked");
+                        println!("{:#?}", state.scene.spheres.len());
+                        state.scene.spheres.pop();
+                        println!("{:#?}", state.scene.spheres.len());
                     }
                 });
 
@@ -444,43 +438,20 @@ impl App {
                 log::info!("Changing Scene: {}", state.selected_scene);
                 match state.selected_scene {
                     0 => {
-                        state.scene = Scene::balls(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(
-                            &state.device,
-                            &state.texture,
-                            &state.params_buffer,
-                            &state.scene,
-                        );
+                        state.scene = Scene::balls(&state.surface_config);
                     }
                     1 => {
-                        state.scene = Scene::random_balls(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(
-                            &state.device,
-                            &state.texture,
-                            &state.params_buffer,
-                            &state.scene,
-                        );
+                        state.scene = Scene::random_balls(&state.surface_config);
                     }
                     2 => {
-                        state.scene = Scene::room(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(
-                            &state.device,
-                            &state.texture,
-                            &state.params_buffer,
-                            &state.scene,
-                        );
+                        state.scene = Scene::room(&state.surface_config);
                     }
                     3 => {
-                        state.scene = Scene::metal(&state.device, &state.surface_config);
-                        state.ray_tracer = RayTracer::new(
-                            &state.device,
-                            &state.texture,
-                            &state.params_buffer,
-                            &state.scene,
-                        );
+                        state.scene = Scene::metal(&state.surface_config);
                     }
                     _ => (),
                 }
+                state.ray_tracer.update_buffers(&state.queue, &state.scene);
                 state.params.frames = -1;
                 state.queue.write_buffer(
                     &state.params_buffer,

@@ -35,7 +35,7 @@ struct Mesh{
 @group(0) @binding(0)
 var<uniform> params: Params;
 @group(0) @binding(1)
-var<uniform> camera: Camera;
+var<uniform> scene: Scene;
 @group(0) @binding(2)
 var texture: texture_storage_2d<rgba32float,read_write>;
 @group(0) @binding(3)
@@ -66,6 +66,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }else{
         textureStore(texture, pos, frag(i));
     }
+}
+
+struct Scene{
+    spheres: u32,
+    vertices: u32,
+    indices: u32,
+    meshes: u32,
+    camera: Camera,
 }
 
 struct Camera{
@@ -167,14 +175,14 @@ fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit{
 fn calculate_ray_collions(ray: Ray) -> Hit{
     var closest_hit: Hit;
     closest_hit.dst = 0x1.fffffep+127f;
-    for(var i: u32 = 0u; i < arrayLength(&spheres); i+=1u){
+    for(var i: u32 = 0u; i < scene.spheres; i+=1u){
         var hit: Hit = ray_sphere(ray, spheres[i].position, spheres[i].radius);
         if hit.hit && hit.dst < closest_hit.dst{
             closest_hit = hit;
             closest_hit.material = spheres[i].material;
         }
     }
-    for(var mesh_index: u32 = 0u; mesh_index< arrayLength(&meshes); mesh_index+=1u){
+    for(var mesh_index: u32 = 0u; mesh_index< scene.meshes; mesh_index+=1u){
         for(var i: u32 = 0u; i < meshes[mesh_index].triangles; i+=1u){
             let first = meshes[mesh_index].first;
             let offset = meshes[mesh_index].offset;
@@ -333,12 +341,12 @@ fn frag(i: FragInput) -> vec4<f32>{
         let anti_aliasing = vec2<f32>(rand(&rng_state),rand(&rng_state));
         let pos = (i.pos + anti_aliasing) / i.size;
 
-        let rd = camera.lens_radius * rand_in_unit_disk(&rng_state);
-        let offset = camera.u * rd.x + camera.v * rd.y;
+        let rd = scene.camera.lens_radius * rand_in_unit_disk(&rng_state);
+        let offset = scene.camera.u * rd.x + scene.camera.v * rd.y;
 
         var ray: Ray;
-        ray.origin = camera.origin + offset;
-        ray.dir = camera.lower_left_corner + pos.x * camera.horizontal + pos.y * camera.vertical - ray.origin;
+        ray.origin = scene.camera.origin + offset;
+        ray.dir = scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin;
 
         total_incoming_light += trace(ray, &rng_state);
     }
