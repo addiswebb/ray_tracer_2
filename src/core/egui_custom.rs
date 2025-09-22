@@ -115,17 +115,17 @@ impl CustomRenderer {
 
         Some(Self {})
     }
-    pub fn render_ray_traced_image(&mut self, ui: &mut egui::Ui) {
-        let ratio = 16.0 / 9.0;
-        let (rect, _response) = ui.allocate_exact_size(
-            egui::Vec2::new(ui.available_width(), ui.available_width() * (1.0 / ratio)),
-            egui::Sense::empty(),
+    pub fn render_ray_traced_image(&mut self, ui: &mut egui::Ui) -> bool {
+        let (rect, response) = ui.allocate_exact_size(
+            egui::Vec2::new(ui.available_width(), ui.available_width() * 0.5625),
+            egui::Sense::all(),
         );
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
             CustomCallback {},
         ));
+        response.contains_pointer()
     }
     pub fn update_bind_group(
         &self,
