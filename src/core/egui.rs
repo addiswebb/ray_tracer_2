@@ -1,6 +1,6 @@
 use egui::Context;
 use egui_wgpu::{
-    Renderer, ScreenDescriptor,
+    RenderState, Renderer, ScreenDescriptor,
     wgpu::{self, CommandEncoder, Device, Queue, TextureFormat, TextureView},
 };
 use egui_winit::State;
@@ -8,7 +8,7 @@ use winit::{event::WindowEvent, window::Window};
 
 pub struct EguiRenderer {
     state: State,
-    renderer: Renderer,
+    pub renderer: Renderer,
     frame_started: bool,
 }
 
@@ -25,7 +25,6 @@ impl EguiRenderer {
         window: &Window,
     ) -> EguiRenderer {
         let egui_context = Context::default();
-
         let state = egui_winit::State::new(
             egui_context,
             egui::viewport::ViewportId::ROOT,
@@ -42,7 +41,6 @@ impl EguiRenderer {
             msaa_samples,
             true,
         );
-
         EguiRenderer {
             state,
             renderer,

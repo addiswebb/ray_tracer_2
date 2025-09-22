@@ -16,7 +16,8 @@ use winit::{
 };
 
 use crate::core::{
-    egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
+    egui::EguiRenderer, egui_custom::CustomRenderer, ray_tracer::RayTracer, renderer::Renderer,
+    scene::Scene, texture::Texture,
 };
 
 const WORKGROUP_SIZE: (u32, u32) = (16, 16);
@@ -48,6 +49,7 @@ pub struct AppState {
     pub prev_scene: i32,
     pub params_buffer: wgpu::Buffer,
     pub mouse_pressed: bool,
+    pub custom_renderer: CustomRenderer,
 }
 
 impl AppState {
@@ -126,7 +128,15 @@ impl AppState {
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
-        let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
+        let mut egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
+        let custom_renderer = CustomRenderer::new(
+            &device,
+            &mut egui_renderer.renderer,
+            &texture,
+            &surface_config,
+            &params_buffer,
+        )
+        .unwrap();
 
         Self {
             device,
@@ -144,6 +154,7 @@ impl AppState {
             params_buffer,
             prev_scene: 0,
             mouse_pressed: false,
+            custom_renderer,
         }
     }
 
@@ -394,6 +405,15 @@ impl App {
             let mut accumulate = state.params.accumulate != 0;
 
             egui::Window::new("Viewport")
+                .default_open(true)
+                .default_size([400.0, 400.0])
+                .show(state.egui_renderer.context(), |ui| {
+                    egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                        state.custom_renderer.render_ray_traced_image(ui);
+                    });
+                });
+
+            egui::Window::new("Debug")
                 .resizable(true)
                 .vscroll(true)
                 .default_open(true)
