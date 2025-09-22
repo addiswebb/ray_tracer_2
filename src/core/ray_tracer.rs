@@ -228,7 +228,7 @@ impl RayTracer {
         );
     }
 
-    pub fn resize(
+    pub fn update_bind_group(
         &mut self,
         device: &wgpu::Device,
         texture: &Texture,

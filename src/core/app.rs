@@ -16,8 +16,12 @@ use winit::{
 };
 
 use crate::core::{
-    egui::EguiRenderer, egui_custom::CustomRenderer, ray_tracer::RayTracer, renderer::Renderer,
-    scene::Scene, texture::Texture,
+    egui::EguiRenderer,
+    egui_custom::{CustomRenderer, CustomResource},
+    ray_tracer::RayTracer,
+    renderer::Renderer,
+    scene::Scene,
+    texture::Texture,
 };
 
 const WORKGROUP_SIZE: (u32, u32) = (16, 16);
@@ -235,7 +239,13 @@ impl App {
             );
             state
                 .ray_tracer
-                .resize(&state.device, &state.texture, &state.params_buffer);
+                .update_bind_group(&state.device, &state.texture, &state.params_buffer);
+            state.custom_renderer.update_bind_group(
+                &state.device,
+                &state.texture,
+                &state.params_buffer,
+                &mut state.egui_renderer.renderer,
+            );
             state
                 .renderer
                 .update_bind_group(&state.device, &state.params_buffer, &state.texture);
@@ -390,12 +400,7 @@ impl App {
             });
             render_pass.set_pipeline(&state.renderer.pipeline);
             render_pass.set_bind_group(0, &state.renderer.bind_group, &[]);
-            render_pass.set_vertex_buffer(0, state.renderer.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(
-                state.renderer.index_buffer.slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
-            render_pass.draw_indexed(0..6, 0, 0..1);
+            render_pass.draw(0..6, 0..1);
         }
         // RENDER EGUI
         {
