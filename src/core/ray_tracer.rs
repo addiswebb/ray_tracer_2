@@ -116,7 +116,7 @@ impl RayTracer {
             mapped_at_creation: false,
         });
 
-        let max_vertices = 1000;
+        let max_vertices = 3000;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Vertex Buffer"),
             size: (max_vertices * std::mem::size_of::<Vertex>() as wgpu::BufferAddress),
@@ -126,7 +126,7 @@ impl RayTracer {
             mapped_at_creation: false,
         });
 
-        let max_indices = 1000;
+        let max_indices = 3000;
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Index Buffer"),
             size: (max_indices * std::mem::size_of::<u32>() as wgpu::BufferAddress),
@@ -216,14 +216,11 @@ impl RayTracer {
         }
     }
     pub fn update_buffers(&mut self, queue: &wgpu::Queue, scene: &Scene) {
-        queue.write_buffer(
-            &self.vertex_buffer,
-            0,
-            bytemuck::cast_slice(&scene.vertices),
-        );
-        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&scene.indices));
+        let (vertices, indices) = scene.vertices_and_indices();
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&indices));
         queue.write_buffer(&self.sphere_buffer, 0, bytemuck::cast_slice(&scene.spheres));
-        queue.write_buffer(&self.mesh_buffer, 0, bytemuck::cast_slice(&scene.meshes));
+        queue.write_buffer(&self.mesh_buffer, 0, bytemuck::cast_slice(&scene.meshes()));
         queue.write_buffer(
             &self.scene_buffer,
             0,

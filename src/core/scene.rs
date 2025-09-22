@@ -4,13 +4,13 @@ use std::{
 };
 
 use egui::ahash::AHashMap;
-use egui_wgpu::wgpu::{self, util::DeviceExt};
+use egui_wgpu::wgpu;
 use glam::{Vec3, Vec4};
 use rand::Rng;
 
 use crate::core::{
     camera::{CameraDescriptor, CameraUniform},
-    mesh::{MeshUniform, Sphere, Vertex},
+    mesh::{Material, Mesh, MeshUniform, Sphere, Vertex},
 };
 
 use super::camera::Camera;
@@ -18,9 +18,7 @@ use super::camera::Camera;
 pub struct Scene {
     pub camera: Camera,
     pub spheres: Vec<Sphere>,
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
-    pub meshes: Vec<MeshUniform>,
+    pub meshes: Vec<Mesh>,
 }
 
 #[repr(C)]
@@ -50,13 +48,65 @@ impl Scene {
         Self {
             camera,
             spheres: vec![],
-            vertices: vec![],
-            indices: vec![],
             meshes: vec![],
         }
     }
+    pub fn set_camera(&mut self, camera_descriptor: &CameraDescriptor) {
+        self.camera = Camera::new(camera_descriptor);
+    }
+    pub fn add_sphere(&mut self, sphere: Sphere) {
+        self.spheres.push(sphere);
+    }
+    pub fn add_spheres(&mut self, spheres: Vec<Sphere>) {
+        self.spheres.extend(spheres);
+    }
+    pub fn add_mesh(&mut self, mesh: Mesh) {
+        self.meshes.push(mesh);
+    }
+    pub async fn load_mesh(&mut self, path: &Path) {
+        self.meshes.extend(load_model_obj(path).await);
+    }
+
+    pub fn vertices_and_indices(&self) -> (Vec<Vertex>, Vec<u32>) {
+        let mut vertices: Vec<Vertex> =
+            Vec::with_capacity(self.meshes.iter().map(|m| m.vertices.len()).sum());
+        let mut indices: Vec<u32> =
+            Vec::with_capacity(self.meshes.iter().map(|m| m.indices.len()).sum());
+
+        for mesh in &self.meshes {
+            let vertex_offset = vertices.len() as u32;
+            vertices.extend_from_slice(&mesh.vertices);
+            indices.extend(mesh.indices.iter().map(|i| i + vertex_offset));
+        }
+        (vertices, indices)
+    }
+
+    pub fn meshes(&self) -> Vec<MeshUniform> {
+        let mut meshes: Vec<MeshUniform> = Vec::with_capacity(self.meshes.len());
+        let mut first = 0;
+        for mesh in &self.meshes {
+            meshes.push(MeshUniform {
+                first,
+                triangles: (mesh.indices.len() / 3) as u32,
+                offset: 0,
+                _padding: 0.0,
+                pos: mesh.position.into(),
+                _padding2: 0.0,
+                color: mesh.material.color,
+                emission_color: mesh.material.emission_color,
+                emission_strength: mesh.material.emission_strength,
+                specular: mesh.material.specular,
+                _padding3: [0.0, 0.0],
+            });
+            first += mesh.indices.len() as u32;
+        }
+        meshes
+    }
+
     pub async fn obj_test(config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(&CameraDescriptor {
+        let mut scene = Scene::new(config);
+
+        scene.set_camera(&CameraDescriptor {
             origin: Vec3::new(0.0, 0.0, 0.0),
             look_at: Vec3::new(1.0, 0.0, 0.0),
             view_up: Vec3::new(0.0, 1.0, 0.0),
@@ -68,38 +118,22 @@ impl Scene {
             focus_dist: 1.0,
         });
 
-        let spheres = vec![Sphere::new(
+        scene.add_sphere(Sphere::new(
             Vec3::new(4.0, 1.0, 0.0),
             0.2,
             Vec4::new(1.0, 1.0, 1.0, 1.0),
             Vec4::ONE,
             10.0,
             1.0,
-        )];
+        ));
 
-        let mut vertices: Vec<Vertex> = vec![];
-        let mut indices: Vec<u32> = vec![];
-        let mut meshes: Vec<MeshUniform> = vec![];
+        scene.load_mesh(Path::new("Suzanne.obj")).await;
 
-        let _ = load_model_obj(
-            Path::new("Suzanne.obj"),
-            &mut indices,
-            &mut vertices,
-            &mut meshes,
-        )
-        .await
-        .unwrap();
-
-        Self {
-            camera,
-            spheres,
-            vertices,
-            indices,
-            meshes,
-        }
+        scene
     }
     pub fn random_balls(config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(&CameraDescriptor {
+        let mut scene = Scene::new(config);
+        scene.set_camera(&CameraDescriptor {
             origin: Vec3::new(13.0, 2.0, 3.0),
             look_at: Vec3::new(0.0, 0.0, 0.0),
             view_up: Vec3::new(0.0, 1.0, 0.0),
@@ -110,7 +144,7 @@ impl Scene {
             aperture: 0.1,
             focus_dist: 10.0,
         });
-        let mut spheres: Vec<Sphere> = vec![
+        scene.add_spheres(vec![
             // Floor
             Sphere::new(
                 Vec3::new(0.0, -1000.0, 0.0),
@@ -144,7 +178,7 @@ impl Scene {
                 0.0,
                 0.9,
             ),
-        ];
+        ]);
 
         for a in -11..11 {
             for b in -11..11 {
@@ -165,7 +199,7 @@ impl Scene {
                             rng.random::<f32>(),
                             1.0,
                         );
-                        spheres.push(Sphere::new(center, 0.2, albedo, Vec4::ZERO, 0.0, 0.0));
+                        scene.add_sphere(Sphere::new(center, 0.2, albedo, Vec4::ZERO, 0.0, 0.0));
                     } else if mat < 0.95 {
                         let albedo = Vec4::new(
                             rng.random_range(0.5..1.0),
@@ -174,45 +208,28 @@ impl Scene {
                             1.0,
                         );
                         let fuzz = rng.random_range(0.0..0.5);
-                        spheres.push(Sphere::new(center, 0.2, albedo, Vec4::ZERO, 0.0, fuzz));
+                        scene.add_sphere(Sphere::new(center, 0.2, albedo, Vec4::ZERO, 0.0, fuzz));
                     } else {
-                        spheres.push(Sphere::new(center, 0.2, Vec4::ONE, Vec4::ZERO, 0.0, -1.0));
+                        scene.add_sphere(Sphere::new(
+                            center,
+                            0.2,
+                            Vec4::ONE,
+                            Vec4::ZERO,
+                            0.0,
+                            -1.0,
+                        ));
                     }
                 }
             }
         }
 
-        let vertices = vec![Vertex::new(
-            Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(2.0, -3.0, -1.0),
-        )];
-        let indices = vec![1u32];
-        let meshes = vec![MeshUniform::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            0,
-            0,
-            0,
-            Vec4::new(0.0, 0.6, 0.0, 1.0),
-            Vec4::new(1.0, 1.0, 1.0, 1.0),
-            0.0,
-            0.5,
-        )];
-        println!("{:#?}", vertices.len());
-        println!("{:#?}", indices.len());
-        println!("{:#?}", meshes.len());
-        println!("{:#?}", spheres.len());
-        Self {
-            camera,
-            spheres,
-            vertices,
-            indices,
-            meshes,
-        }
+        scene
     }
     pub fn room(config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(&CameraDescriptor {
-            origin: Vec3::new(-7.0, 0.0, 0.0),
-            look_at: Vec3::new(1.0, 0.0, 0.0),
+        let mut scene = Scene::new(config);
+        scene.set_camera(&CameraDescriptor {
+            origin: Vec3::new(0.0, 1.0, 3.0),
+            look_at: Vec3::new(0.0, 1.0, 2.0),
             view_up: Vec3::new(0.0, 1.0, 0.0),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
@@ -222,134 +239,138 @@ impl Scene {
             focus_dist: 0.1,
         });
 
-        let spheres = vec![
-            Sphere::new(
-                Vec3::new(4.0, 0.0, 1.7),
-                1.2,
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                1.0,
-            ),
-            Sphere::new(
-                Vec3::new(4.0, 0.0, -1.7),
-                1.2,
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                0.5,
-            ),
-        ];
+        // scene.add_spheres(vec![
+        //     Sphere::new(
+        //         Vec3::new(4.0, 0.0, 1.7),
+        //         1.2,
+        //         Vec4::new(1.0, 1.0, 1.0, 1.0),
+        //         Vec4::new(0.0, 0.0, 0.0, 1.0),
+        //         0.0,
+        //         1.0,
+        //     ),
+        //     Sphere::new(
+        //         Vec3::new(4.0, 0.0, -1.7),
+        //         1.2,
+        //         Vec4::new(1.0, 1.0, 1.0, 1.0),
+        //         Vec4::new(0.0, 0.0, 0.0, 1.0),
+        //         0.0,
+        //         0.5,
+        //     ),
+        // ]);
 
-        #[allow(unused_mut)]
-        let mut vertices = vec![
-            Vertex::new(Vec3::new(3.0, -3.0, -3.0), Vec3::new(2.0, -3.0, -3.0)),
-            Vertex::new(Vec3::new(3.0, -3.0, 3.0), Vec3::new(4.0, -3.0, 0.0)),
-            Vertex::new(Vec3::new(-3.0, -3.0, 3.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(-3.0, -3.0, -3.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(3.0, 3.0, -3.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(3.0, 3.0, 3.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(-3.0, 3.0, 3.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(-3.0, 3.0, -3.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(1.0, 1.0, -1.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(1.0, 1.0, 1.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(-1.0, 1.0, 1.0), Vec3::new(3.0, -4.0, 2.0)),
-            Vertex::new(Vec3::new(-1.0, 1.0, -1.0), Vec3::new(3.0, -4.0, 2.0)),
-        ];
-        #[allow(unused_mut)]
-        let mut indices = vec![
-            3u32, 2u32, 1u32, 3u32, 1u32, 0u32, 7u32, 0u32, 4u32, 7u32, 3u32, 0u32, 7u32, 6u32,
-            2u32, 7u32, 2u32, 3u32, 2u32, 6u32, 5u32, 2u32, 5u32, 1u32, 1u32, 5u32, 4u32, 1u32,
-            4u32, 0u32, 5u32, 6u32, 7u32, 5u32, 7u32, 4u32, 9u32, 10u32, 11u32, 9u32, 11u32, 8u32,
-        ];
-        #[allow(unused_mut)]
-        let mut meshes = vec![
-            MeshUniform::new(
-                Vec3::new(3.0, 0.0, 0.0),
-                0,
-                2,
-                0,
-                Vec4::new(0.8, 0.2, 0.2, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.5,
-            ),
-            MeshUniform::new(
-                Vec3::new(3.0, 0.0, 0.0),
-                6,
-                2,
-                0,
-                Vec4::new(0.2, 0.8, 0.2, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.5,
-            ),
-            MeshUniform::new(
-                Vec3::new(3.0, 0.0, 0.0),
-                12,
-                2,
-                0,
-                Vec4::new(0.2, 0.2, 0.8, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.5,
-            ),
-            MeshUniform::new(
-                Vec3::new(3.0, 0.0, 0.0),
-                18,
-                2,
-                0,
-                Vec4::new(0.5, 0.5, 0.1, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.5,
-            ),
-            MeshUniform::new(
-                Vec3::new(3.0, 0.0, 0.0),
-                24,
-                2,
-                0,
-                Vec4::new(0.0, 0.5, 0.5, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.5,
-            ),
-            MeshUniform::new(
-                Vec3::new(3.0, 0.0, 0.0),
-                30,
-                2,
-                0,
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.5,
-            ),
-            MeshUniform::new(
-                Vec3::new(3.0, 1.9, 0.0),
-                36,
-                2,
-                0,
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                10.5,
-                0.0,
-            ),
-        ];
+        // Floor
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().color([1.0, 0.0, 0.0, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-1.0, 0.0, -1.0), Vec3::Y),
+                Vertex::new(Vec3::new(1.0, 0.0, -1.0), Vec3::Y),
+                Vertex::new(Vec3::new(1.0, 0.0, 1.0), Vec3::Y),
+                Vertex::new(Vec3::new(-1.0, 0.0, 1.0), Vec3::Y),
+            ],
+            indices: vec![2, 1, 0, 3, 2, 0],
+        });
 
-        Self {
-            camera,
-            spheres,
-            vertices,
-            indices,
-            meshes,
-        }
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().color([0.0, 0.3, 0.3, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-1.0, 2.0, -1.0), -Vec3::Y),
+                Vertex::new(Vec3::new(1.0, 2.0, -1.0), -Vec3::Y),
+                Vertex::new(Vec3::new(1.0, 2.0, 1.0), -Vec3::Y),
+                Vertex::new(Vec3::new(-1.0, 2.0, 1.0), -Vec3::Y),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().color([1.0, 1.0, 0.0, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-1.0, 0.0, -1.0), Vec3::X),
+                Vertex::new(Vec3::new(-1.0, 2.0, -1.0), Vec3::X),
+                Vertex::new(Vec3::new(-1.0, 2.0, 1.0), Vec3::X),
+                Vertex::new(Vec3::new(-1.0, 0.0, 1.0), Vec3::X),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().color([0.0, 1.0, 0.0, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(1.0, 0.0, -1.0), -Vec3::X),
+                Vertex::new(Vec3::new(1.0, 0.0, 1.0), -Vec3::X),
+                Vertex::new(Vec3::new(1.0, 2.0, 1.0), -Vec3::X),
+                Vertex::new(Vec3::new(1.0, 2.0, -1.0), -Vec3::X),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().color([0.0, 0.5, 1.0, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-1.0, 0.0, -1.0), -Vec3::Z),
+                Vertex::new(Vec3::new(1.0, 0.0, -1.0), -Vec3::Z),
+                Vertex::new(Vec3::new(1.0, 2.0, -1.0), -Vec3::Z),
+                Vertex::new(Vec3::new(-1.0, 2.0, -1.0), -Vec3::Z),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().color([0.0, 0.0, 1.0, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-1.0, 0.0, 1.0), Vec3::Z),
+                Vertex::new(Vec3::new(1.0, 0.0, 1.0), Vec3::Z),
+                Vertex::new(Vec3::new(1.0, 2.0, 1.0), Vec3::Z),
+                Vertex::new(Vec3::new(-1.0, 2.0, 1.0), Vec3::Z),
+            ],
+            indices: vec![2, 1, 0, 3, 2, 0],
+        });
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 5.0),
+            vertices: vec![
+                Vertex::new(Vec3::new(-0.4, 1.98, -0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(0.4, 1.98, -0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(0.4, 1.98, 0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(-0.4, 1.98, 0.4), -Vec3::Y),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+        scene.add_sphere(Sphere::new(
+            Vec3::new(0.4, 1.0, 0.0),
+            0.3,
+            Vec4::new(0.9, 0.9, 0.9, 1.0),
+            Vec4::ZERO,
+            0.0,
+            1.0,
+        ));
+
+        // Right diffuse/specular sphere
+        scene.add_sphere(Sphere::new(
+            Vec3::new(-0.4, 1.0, 0.0),
+            0.4,
+            Vec4::new(0.7, 0.7, 0.7, 1.0), // diffuse gray
+            Vec4::ZERO,
+            0.0,
+            0.2,
+        ));
+        scene
     }
     pub fn metal(config: &wgpu::SurfaceConfiguration) -> Self {
-        // let lookfrom= Vec3::new(3.0,3.0,2.0);
-        // let lookat = Vec3::new(0.0,0.0,-1.0);
-        // let length = (lookfrom - lookat).length();
+        let mut scene = Scene::new(config);
 
-        let camera = Camera::new(&CameraDescriptor {
+        scene.set_camera(&CameraDescriptor {
             origin: Vec3::new(0.0, 0.0, 3.0),
             look_at: Vec3::new(0.0, 0.0, -1.0),
             view_up: Vec3::new(0.0, 1.0, 0.0),
@@ -360,7 +381,7 @@ impl Scene {
             aperture: 0.0,
             focus_dist: 0.1,
         });
-        let spheres = vec![
+        scene.add_spheres(vec![
             //floor
             Sphere::new(
                 Vec3::new(0.0, -100.5, -1.0),
@@ -394,33 +415,13 @@ impl Scene {
                 0.0,
                 0.15,
             ),
-        ];
-        //TODO allow for no meshes or sphers in a scene
-        let vertices = vec![Vertex::new(
-            Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(2.0, -3.0, -1.0),
-        )];
-        let indices = vec![1u32];
-        let meshes = vec![MeshUniform::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            0,
-            0,
-            0,
-            Vec4::new(0.0, 0.6, 0.0, 1.0),
-            Vec4::new(1.0, 1.0, 1.0, 1.0),
-            0.0,
-            0.5,
-        )];
-        Self {
-            camera,
-            spheres,
-            vertices,
-            indices,
-            meshes,
-        }
+        ]);
+
+        scene
     }
     pub fn balls(config: &wgpu::SurfaceConfiguration) -> Self {
-        let camera = Camera::new(&CameraDescriptor {
+        let mut scene = Scene::new(config);
+        scene.set_camera(&CameraDescriptor {
             origin: Vec3::new(3.089, 1.53, -3.0),
             look_at: Vec3::new(-2.0, -1.0, 2.0),
             view_up: Vec3::new(0.0, 1.0, 0.0),
@@ -432,7 +433,7 @@ impl Scene {
             focus_dist: 0.1,
         });
 
-        let spheres = vec![
+        scene.add_spheres(vec![
             Sphere::new(
                 Vec3::new(-3.64, -0.42, 0.8028),
                 0.75,
@@ -483,58 +484,37 @@ impl Scene {
                 2.0,
                 0.0,
             ),
-        ];
-        let vertices = vec![Vertex::new(
-            Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(2.0, -3.0, -1.0),
-        )];
-        let indices = vec![1u32];
-        let meshes = vec![MeshUniform::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            0,
-            0,
-            0,
-            Vec4::new(0.0, 0.6, 0.0, 1.0),
-            Vec4::new(1.0, 1.0, 1.0, 1.0),
-            0.0,
-            0.5,
-        )];
-        // #[allow(unused_mut)]
-        // let mut vertices = vec![
-        //     Vertex::new(Vec3::new(0.0, 0.0, 1.0), Vec3::new(2.0,-3.0,-1.0)),
-        //     Vertex::new(Vec3::new(0.0, 0.15, 0.0), Vec3::new(4.0,-3.0, 0.0)),
-        //     Vertex::new(Vec3::new(1.0, 0.3, 0.0), Vec3::new(3.0,-4.0, 2.0)),
-        // ];
-        // #[allow(unused_mut)]
-        // let mut indices = vec![
-        //     2u32,1u32,0u32,
-        // ];
-        // #[allow(unused_mut)]
-        // let mut meshes = vec![
-        //     Mesh::new(
-        //         Vec3::new(0.0,0.0,0.0),
-        //         0, 1, 0,
-        //         Vec4::new(0.0,0.6,0.0,1.0),
-        //         Vec4::new(1.0,1.0,1.0,1.0), 0.0, 0.5,
-        //     ),
-        // ];
+        ]);
 
-        //load_model(Path::new("cube2.obj"),&mut vertices, &mut indices, &mut meshes).await.unwrap();
-
-        Self {
-            camera,
-            spheres,
-            vertices,
-            indices,
-            meshes,
-        }
+        scene.add_mesh(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material {
+                color: [0.0, 0.6, 0.0, 1.0],
+                emission_color: [1.0, 1.0, 1.0, 1.0],
+                emission_strength: 0.0,
+                specular: 0.5,
+            },
+            vertices: vec![Vertex::new(
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(2.0, -3.0, -1.0),
+            )],
+            indices: vec![1u32],
+        });
+        scene
     }
 
     pub fn to_uniform(&self) -> SceneUniform {
+        let mut vertices_len: u32 = 0;
+        let mut indices_len: u32 = 0;
+        for mesh in self.meshes.iter() {
+            vertices_len += mesh.vertices.len() as u32;
+            indices_len += mesh.indices.len() as u32;
+        }
         SceneUniform {
             spheres: self.spheres.len() as u32,
-            vertices: self.vertices.len() as u32,
-            indices: self.indices.len() as u32,
+            vertices: vertices_len,
+            indices: indices_len,
             meshes: self.meshes.len() as u32,
             camera: self.camera.to_uniform(),
         }
@@ -564,15 +544,11 @@ pub async fn load_binary(path: &Path) -> anyhow::Result<Vec<u8>> {
     Ok(std::fs::read(path)?)
 }
 
-pub async fn load_model_obj(
-    path: &Path,
-    indices: &mut Vec<u32>,
-    vertices: &mut Vec<Vertex>,
-    meshes: &mut Vec<MeshUniform>,
-) -> anyhow::Result<bool> {
+pub async fn load_model_obj(path: &Path) -> Vec<Mesh> {
+    let mut meshes: Vec<Mesh> = vec![];
     let path = std::path::Path::new(FILE).join("assets").join(path);
 
-    let obj_text = load_string(&path).await?;
+    let obj_text = load_string(&path).await.unwrap();
     let obj_cursor = Cursor::new(obj_text);
     let mut obj_reader = BufReader::new(obj_cursor);
     let (models, _) = tobj::load_obj_buf(
@@ -585,8 +561,9 @@ pub async fn load_model_obj(
         |_p| Ok((Vec::new(), AHashMap::default())),
     )
     .unwrap();
-    let first = vertices.len() as u32;
     for m in models.into_iter() {
+        let mut vertices = vec![];
+        let mut indices = vec![];
         for (i, _) in (0..m.mesh.positions.len() / 3).enumerate() {
             vertices.push(Vertex::new(
                 Vec3::new(
@@ -605,17 +582,14 @@ pub async fn load_model_obj(
             indices.push(index as u32);
         }
 
-        meshes.push(MeshUniform::new(
-            Vec3::new(5.0, 0.0, 0.0),
-            first,
-            (m.mesh.positions.len() / 3) as u32 - 1,
-            0,
-            Vec4::new(1.0, 0.0, 0.0, 1.0),
-            Vec4::ONE,
-            0.0,
-            0.5,
-        ));
+        meshes.push(Mesh {
+            position: Vec3::ZERO,
+            size: Vec3::ONE,
+            material: Material::new().color([1.0, 0.0, 0.0, 1.0]),
+            vertices,
+            indices,
+        });
     }
 
-    return Ok(true);
+    return meshes;
 }

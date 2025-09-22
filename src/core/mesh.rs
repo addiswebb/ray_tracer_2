@@ -56,12 +56,40 @@ impl Sphere {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Material {
-    color: [f32; 4],
-    emission_color: [f32; 4],
-    emission_strength: f32,
+    pub color: [f32; 4],
+    pub emission_color: [f32; 4],
+    pub emission_strength: f32,
+    pub specular: f32,
 }
 
-pub struct NewMesh {
+impl Material {
+    pub fn new() -> Material {
+        Material {
+            color: [1.0, 1.0, 1.0, 1.0],
+            emission_color: [1.0, 1.0, 1.0, 1.0],
+            emission_strength: 0.0,
+            specular: 0.5,
+        }
+    }
+    pub fn color(&mut self, color: [f32; 4]) -> Self {
+        self.color = color;
+        *self
+    }
+
+    pub fn emissive(&mut self, color: [f32; 4], strength: f32) -> Self {
+        self.emission_color = color;
+        self.emission_strength = strength;
+        *self
+    }
+    pub fn glass(&mut self, refractive_index: f32) {
+        self.specular = -refractive_index;
+    }
+    pub fn specular(&mut self, specular: f32) {
+        self.specular = specular;
+    }
+}
+
+pub struct Mesh {
     pub position: Vec3,
     pub size: Vec3,
     pub material: Material,
@@ -83,31 +111,4 @@ pub struct MeshUniform {
     pub emission_strength: f32,
     pub specular: f32,
     pub _padding3: [f32; 2],
-}
-
-impl MeshUniform {
-    pub fn new(
-        pos: Vec3,
-        first: u32,
-        triangles: u32,
-        offset: u32,
-        color: Vec4,
-        emission_color: Vec4,
-        emission_strength: f32,
-        specular: f32,
-    ) -> Self {
-        Self {
-            first,
-            triangles,
-            offset,
-            _padding2: 0.0,
-            pos: pos.to_array(),
-            _padding: 0.0,
-            color: color.to_array(),
-            emission_color: emission_color.to_array(),
-            emission_strength,
-            specular: if specular < 1.0 { specular } else { 1.0 },
-            _padding3: [0.0; 2],
-        }
-    }
 }

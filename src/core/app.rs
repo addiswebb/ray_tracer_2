@@ -5,7 +5,7 @@ use std::{
 
 use egui_wgpu::{
     ScreenDescriptor,
-    wgpu::{self, SurfaceError, naga::RayQueryIntersection, util::DeviceExt},
+    wgpu::{self, SurfaceError, util::DeviceExt},
 };
 use winit::{
     application::ApplicationHandler,
@@ -91,7 +91,7 @@ impl AppState {
             format: *swapchain_format,
             width,
             height,
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::Immediate,
             desired_maximum_frame_latency: 0,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
@@ -122,7 +122,7 @@ impl AppState {
         );
 
         let renderer = Renderer::new(&device, &texture, &surface_config, &params_buffer);
-        let scene = Scene::balls(&surface_config);
+        let scene = Scene::room(&surface_config);
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
@@ -206,7 +206,7 @@ impl App {
             state
                 .surface
                 .configure(&state.device, &state.surface_config);
-            
+
             state.params.width = width;
             state.params.height = height;
             state.params.frames = -1;
@@ -217,11 +217,11 @@ impl App {
                 bytemuck::cast_slice(&[state.params]),
             );
             state.texture = Texture::new(
-                            &state.device,
-                            width,
-                            height,
-                            wgpu::TextureFormat::Rgba32Float,
-                        );
+                &state.device,
+                width,
+                height,
+                wgpu::TextureFormat::Rgba32Float,
+            );
             state
                 .ray_tracer
                 .resize(&state.device, &state.texture, &state.params_buffer);
