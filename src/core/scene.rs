@@ -687,6 +687,7 @@ pub async fn load_string(path: &Path) -> anyhow::Result<String> {
     Ok(std::fs::read_to_string(path)?)
 }
 
+#[allow(unused)]
 pub async fn load_binary(path: &Path) -> anyhow::Result<Vec<u8>> {
     assert!(
         path.exists(),

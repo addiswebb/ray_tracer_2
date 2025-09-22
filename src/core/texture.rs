@@ -33,9 +33,6 @@ impl Texture {
     pub fn binding_resource(&'_ self) -> wgpu::BindingResource<'_> {
         wgpu::BindingResource::TextureView(&self.texture_view)
     }
-    pub fn texture_view(&self) -> &wgpu::TextureView {
-        &self.texture_view
-    }
 
     pub fn binding_type(&self, access: wgpu::StorageTextureAccess) -> wgpu::BindingType {
         wgpu::BindingType::StorageTexture {
