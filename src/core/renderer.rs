@@ -1,5 +1,6 @@
 use std::{mem, time::Duration};
 
+#[allow(unused_imports)]
 use egui_wgpu::wgpu::{
     self, Device, PipelineCompilationOptions, SurfaceConfiguration, util::DeviceExt,
 };

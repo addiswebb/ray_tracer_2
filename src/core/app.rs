@@ -17,7 +17,7 @@ use winit::{
 
 use crate::core::{
     egui::EguiRenderer,
-    egui_custom::{CustomRenderer, CustomResource},
+    egui_custom::{CustomRenderer},
     ray_tracer::RayTracer,
     renderer::Renderer,
     scene::Scene,

@@ -1,6 +1,6 @@
 use egui::Context;
 use egui_wgpu::{
-    RenderState, Renderer, ScreenDescriptor,
+    Renderer, ScreenDescriptor,
     wgpu::{self, CommandEncoder, Device, Queue, TextureFormat, TextureView},
 };
 use egui_winit::State;

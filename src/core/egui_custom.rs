@@ -1,7 +1,6 @@
 use std::mem;
 
 use egui_wgpu::wgpu;
-use glam::Vec2;
 use wgpu::PipelineCompilationOptions;
 
 use crate::core::{app::Params, texture::Texture};

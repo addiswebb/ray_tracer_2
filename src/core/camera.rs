@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use egui_wgpu::wgpu;
 use glam::Vec3;
+#[allow(unused_imports)]
 use wgpu::util::DeviceExt;
 use winit::{
     event::{ElementState, MouseScrollDelta},

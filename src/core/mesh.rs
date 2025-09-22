@@ -93,6 +93,7 @@ impl Material {
     }
 }
 
+#[allow(unused)]
 pub struct Mesh {
     pub position: Vec3,
     pub size: Vec3,

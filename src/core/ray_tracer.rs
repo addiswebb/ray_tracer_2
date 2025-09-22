@@ -4,7 +4,6 @@ use egui_wgpu::wgpu::{self, PipelineCompilationOptions};
 
 use crate::core::{
     app::Params,
-    camera::CameraUniform,
     mesh::{MeshUniform, Sphere, Vertex},
     scene::{Scene, SceneUniform},
     texture::Texture,
