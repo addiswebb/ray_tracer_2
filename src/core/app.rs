@@ -409,21 +409,12 @@ impl App {
             let mut skybox = state.params.skybox != 0;
             let mut accumulate = state.params.accumulate != 0;
 
-            egui::Window::new("Viewport")
-                .default_open(true)
-                .default_size([400.0, 400.0])
-                .show(state.egui_renderer.context(), |ui| {
-                    egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                        state.custom_renderer.render_ray_traced_image(ui);
-                    });
-                });
-
-            egui::Window::new("Debug")
+            egui::SidePanel::left("Debug")
                 .resizable(true)
-                .vscroll(true)
-                .default_open(true)
-                .default_size([300.0, 260.0])
+                .width_range(200.0..=400.0)
                 .show(state.egui_renderer.context(), |ui| {
+                    ui.heading("Debug");
+                    ui.separator();
                     ui.label(format!("Frame: {}", state.params.frames));
                     ui.label(format!(
                         "FPS: {:.0}",
@@ -460,6 +451,12 @@ impl App {
                         println!("{:#?}", state.scene.spheres.len());
                     }
                 });
+
+            egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {
+                egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                    state.custom_renderer.render_ray_traced_image(ui);
+                });
+            });
 
             if !(state.selected_scene == state.prev_scene) {
                 log::info!("Changing Scene: {}", state.selected_scene);

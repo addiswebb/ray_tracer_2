@@ -81,11 +81,15 @@ impl Material {
         self.emission_strength = strength;
         *self
     }
-    pub fn glass(&mut self, refractive_index: f32) {
+    #[allow(unused)]
+    pub fn glass(&mut self, refractive_index: f32) -> Self {
         self.specular = -refractive_index;
+        *self
     }
-    pub fn specular(&mut self, specular: f32) {
+    #[allow(unused)]
+    pub fn specular(&mut self, specular: f32) -> Self {
         self.specular = specular;
+        *self
     }
 }
 
