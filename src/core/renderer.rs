@@ -1,33 +1,20 @@
-use std::{mem, time::Duration};
+use std::mem;
 
-#[allow(unused_imports)]
-use egui_wgpu::wgpu::{
-    self, Device, PipelineCompilationOptions, SurfaceConfiguration, util::DeviceExt,
-};
+use egui_wgpu::wgpu;
+use wgpu::PipelineCompilationOptions;
 
 use crate::core::{app::Params, texture::Texture};
 
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct TexVertex {
-    _pos: [f32; 4],
-    _tex_coord: [f32; 2],
-}
-
-pub struct Renderer {
-    pub pipeline: wgpu::RenderPipeline,
-    pub bind_group: wgpu::BindGroup,
-    pub bind_group_layout: wgpu::BindGroupLayout,
-    pub dt: Duration,
-}
+pub struct Renderer {}
 
 impl Renderer {
-    pub fn new(
-        device: &Device,
+    pub fn new<'a>(
+        device: &wgpu::Device,
+        renderer: &mut egui_wgpu::Renderer,
         texture: &Texture,
-        surface_config: &SurfaceConfiguration,
+        surface_config: &wgpu::SurfaceConfiguration,
         params_buffer: &wgpu::Buffer,
-    ) -> Self {
+    ) -> Option<Self> {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Renderer Bind Group Layout"),
             entries: &[
@@ -81,7 +68,7 @@ impl Renderer {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(&format!("{:?}", shader)),
+            label: Some(&format!("Renderer {:?}", shader)),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -120,20 +107,55 @@ impl Renderer {
             multiview: None,
             cache: None,
         });
-
-        let dt = Duration::new(0, 0);
-        Self {
+        renderer.callback_resources.insert(RendererResource {
             pipeline,
             bind_group,
             bind_group_layout,
-            dt,
-        }
+        });
+
+        Some(Self {})
+    }
+    pub fn render_ray_traced_image(&mut self, ui: &mut egui::Ui) -> bool {
+        let (rect, response) = ui.allocate_exact_size(
+            egui::Vec2::new(ui.available_width(), ui.available_width() * 0.5625),
+            egui::Sense::click(),
+        );
+
+        ui.painter().add(egui_wgpu::Callback::new_paint_callback(
+            rect,
+            EguiRenderCallback {},
+        ));
+        response.clicked()
+    }
+    pub fn update_bind_group(
+        &self,
+        device: &wgpu::Device,
+        texture: &Texture,
+        params_buffer: &wgpu::Buffer,
+        renderer: &mut egui_wgpu::Renderer,
+    ) {
+        let resource: &mut RendererResource = renderer.callback_resources.get_mut().unwrap();
+        resource.update_bind_group(device, texture, params_buffer);
+    }
+}
+
+pub struct RendererResource {
+    pipeline: wgpu::RenderPipeline,
+    bind_group: wgpu::BindGroup,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl RendererResource {
+    fn render(&self, render_pass: &mut wgpu::RenderPass<'_>) {
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.draw(0..6, 0..1);
     }
     pub fn update_bind_group(
         &mut self,
         device: &wgpu::Device,
-        params_buffer: &wgpu::Buffer,
         texture: &Texture,
+        params_buffer: &wgpu::Buffer,
     ) {
         self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Renderer Bind Group"),
@@ -149,5 +171,19 @@ impl Renderer {
                 },
             ],
         });
+    }
+}
+
+struct EguiRenderCallback {}
+
+impl egui_wgpu::CallbackTrait for EguiRenderCallback {
+    fn paint(
+        &self,
+        _info: egui::PaintCallbackInfo,
+        render_pass: &mut wgpu::RenderPass<'static>,
+        resources: &egui_wgpu::CallbackResources,
+    ) {
+        let resources: &RendererResource = resources.get().unwrap();
+        resources.render(render_pass);
     }
 }

@@ -9,15 +9,14 @@ use egui_wgpu::{
 };
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalSize,
+    dpi::{LogicalPosition, PhysicalSize},
     event::{DeviceEvent, KeyEvent, WindowEvent},
-    keyboard::PhysicalKey,
+    keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
 
 use crate::core::{
-    egui::EguiRenderer, egui_custom::CustomRenderer, ray_tracer::RayTracer, renderer::Renderer,
-    scene::Scene, texture::Texture,
+    egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
 };
 
 const WORKGROUP_SIZE: (u32, u32) = (16, 16);
@@ -39,7 +38,6 @@ pub struct AppState {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub surface: wgpu::Surface<'static>,
     pub scale_factor: f32,
-    pub renderer: Renderer,
     pub ray_tracer: RayTracer,
     pub egui_renderer: EguiRenderer,
     pub params: Params,
@@ -49,8 +47,9 @@ pub struct AppState {
     pub prev_scene: i32,
     pub params_buffer: wgpu::Buffer,
     pub mouse_pressed: bool,
-    pub custom_renderer: CustomRenderer,
+    pub renderer: Renderer,
     pub use_mouse: bool,
+    pub dt: Duration,
 }
 
 impl AppState {
@@ -124,13 +123,12 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let renderer = Renderer::new(&device, &texture, &surface_config, &params_buffer);
         let scene = Scene::room(&surface_config);
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
         let mut egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
-        let custom_renderer = CustomRenderer::new(
+        let renderer = Renderer::new(
             &device,
             &mut egui_renderer.renderer,
             &texture,
@@ -145,7 +143,6 @@ impl AppState {
             surface,
             surface_config,
             egui_renderer,
-            renderer,
             ray_tracer,
             params,
             scene,
@@ -155,8 +152,9 @@ impl AppState {
             params_buffer,
             prev_scene: 0,
             mouse_pressed: false,
-            custom_renderer,
+            renderer,
             use_mouse: false,
+            dt: Duration::ZERO,
         }
     }
 
@@ -187,9 +185,10 @@ impl App {
     pub async fn set_window(&mut self, window: Window) {
         let window = Arc::new(window);
         let initial_width = 800;
-        let initial_height = 800;
+        let initial_height = 600;
 
         let _ = window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
+        // window.set_maximized(true);
 
         let surface = self
             .instance
@@ -238,15 +237,12 @@ impl App {
             state
                 .ray_tracer
                 .update_bind_group(&state.device, &state.texture, &state.params_buffer);
-            state.custom_renderer.update_bind_group(
+            state.renderer.update_bind_group(
                 &state.device,
                 &state.texture,
                 &state.params_buffer,
                 &mut state.egui_renderer.renderer,
             );
-            state
-                .renderer
-                .update_bind_group(&state.device, &state.params_buffer, &state.texture);
         }
     }
     pub fn clear_accumulation(&mut self) {
@@ -261,8 +257,9 @@ impl App {
 
     pub fn update(&mut self, dt: Duration) {
         let state = self.state.as_mut().unwrap();
-        state.renderer.dt = dt;
+        state.dt = dt;
         state.scene.camera.update_camera(dt);
+
         if state.params.accumulate != 0 {
             state.params.frames += 1;
         } else {
@@ -289,15 +286,24 @@ impl App {
                     },
                 ..
             } => match key {
+                KeyCode::Escape => {
+                    state.use_mouse = false;
+                    let window = self.window.as_mut().unwrap();
+                    window.set_cursor_visible(true);
+                    window
+                        .set_cursor_grab(winit::window::CursorGrabMode::None)
+                        .unwrap();
+                    true
+                }
                 _ => state
                     .scene
                     .camera
                     .controller
                     .process_keyboard(*key, *key_state),
             },
-            // WindowEvent::MouseWheel { delta, .. } => {
-            //     state.scene.camera.controller.process_scroll(delta)
-            // }
+            WindowEvent::MouseWheel { delta, .. } => {
+                state.scene.camera.controller.process_scroll(delta)
+            }
             WindowEvent::MouseInput {
                 button: winit::event::MouseButton::Left,
                 state: button_state,
@@ -363,7 +369,7 @@ impl App {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let window = self.window.as_ref().unwrap();
+        let window = self.window.as_mut().unwrap();
         // Ray Tracer Pass
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -380,27 +386,7 @@ impl App {
             compute_pass.dispatch_workgroups(xgroups, ygroups, 1);
         }
 
-        // Renderer Pass
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Renderer Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            render_pass.set_pipeline(&state.renderer.pipeline);
-            render_pass.set_bind_group(0, &state.renderer.bind_group, &[]);
-            render_pass.draw(0..6, 0..1);
-        }
-        // RENDER EGUI
+        // RENDER
         {
             state.egui_renderer.begin_frame(window);
 
@@ -416,7 +402,7 @@ impl App {
                     ui.label(format!("Frame: {}", state.params.frames));
                     ui.label(format!(
                         "FPS: {:.0}",
-                        1.0 / (1.0 * state.renderer.dt.as_secs_f64()) // state.renderer.dt.as_micros()
+                        1.0 / (1.0 * state.dt.as_secs_f64()) // state.renderer.dt.as_micros()
                     ));
                     ui.label(format!("Position: ({})", state.scene.camera.origin));
                     ui.label(format!("Look At: ({})", state.scene.camera.look_at));
@@ -452,7 +438,13 @@ impl App {
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {
                 egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                    state.use_mouse = state.custom_renderer.render_ray_traced_image(ui);
+                    if state.renderer.render_ray_traced_image(ui) {
+                        state.use_mouse = true;
+                        window.set_cursor_visible(!state.use_mouse);
+                        window
+                            .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                            .unwrap();
+                    }
                 });
             });
 
@@ -516,7 +508,7 @@ impl ApplicationHandler for App {
         let state = self.state.as_mut().unwrap();
         match event {
             DeviceEvent::MouseMotion { delta } => {
-                if state.mouse_pressed && state.use_mouse {
+                if state.use_mouse {
                     state
                         .scene
                         .camera
@@ -528,6 +520,11 @@ impl ApplicationHandler for App {
             DeviceEvent::Button { button, state: x } => {
                 if button == 0 {
                     state.mouse_pressed = x == winit::event::ElementState::Pressed;
+                }
+            }
+            DeviceEvent::MouseWheel { delta } => {
+                if state.use_mouse {
+                    state.scene.camera.controller.process_scroll(&delta);
                 }
             }
             _ => {}

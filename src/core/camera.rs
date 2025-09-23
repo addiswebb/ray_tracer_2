@@ -5,6 +5,7 @@ use glam::Vec3;
 #[allow(unused_imports)]
 use wgpu::util::DeviceExt;
 use winit::{
+    dpi::PhysicalPosition,
     event::{ElementState, MouseScrollDelta},
     keyboard::KeyCode,
 };
@@ -128,7 +129,7 @@ impl Camera {
         // changes when zooming. I've added this to make it easier
         // to get closer to an object you want to focus on.
         let (pitch_sin, pitch_cos) = pitch.sin_cos();
-        let scrollward = Vec3::new(pitch_cos * yaw_cos, pitch_sin, pitch_cos * yaw_sin).normalize();
+        let scrollward = Vec3::new(pitch_cos * yaw_sin, pitch_sin, pitch_cos * yaw_cos).normalize();
         self.origin -= scrollward
             * self.controller.scroll
             * self.controller.speed
@@ -205,7 +206,7 @@ impl CameraController {
             self.amount_backward,
             self.amount_up,
             self.amount_down,
-            self.scroll,
+            self.scroll.abs(),
         ]
         .iter()
         .any(|&x| x > 0.0)
@@ -251,14 +252,11 @@ impl CameraController {
         self.rotate_vertical = mouse_dy as f32;
     }
 
-    pub fn process_scroll(&mut self, _delta: &MouseScrollDelta) -> bool {
-        // self.scroll = -match delta{
-        //     MouseScrollDelta::LineDelta(_, scroll) => scroll * 0.1,
-        //     MouseScrollDelta::PixelDelta(PhysicalPosition{
-        //         y: scroll,
-        //         ..
-        //     }) => *scroll as f32,
-        // };
+    pub fn process_scroll(&mut self, delta: &MouseScrollDelta) -> bool {
+        self.scroll = -match delta {
+            MouseScrollDelta::LineDelta(_, scroll) => scroll * 0.1,
+            MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => *scroll as f32,
+        };
         return true;
     }
 }
