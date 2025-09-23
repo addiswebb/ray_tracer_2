@@ -33,7 +33,7 @@ pub struct SceneUniform {
 
 #[allow(dead_code)]
 impl Scene {
-    pub fn new(config: &wgpu::SurfaceConfiguration) -> Self {
+    pub fn new(_config: &wgpu::SurfaceConfiguration) -> Self {
         let camera = Camera::new(&CameraDescriptor {
             origin: Vec3::ZERO,
             look_at: Vec3::ZERO,
@@ -142,7 +142,7 @@ impl Scene {
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.1,
+            aperture: 0.0,
             focus_dist: 10.0,
         });
         scene.add_spheres(vec![

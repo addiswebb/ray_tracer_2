@@ -19,10 +19,8 @@ use crate::core::{
     egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
 };
 
-const WORKGROUP_SIZE: (u32, u32) = (16, 16);
-
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug, PartialEq)]
 pub struct Params {
     width: u32,
     height: u32,
@@ -123,7 +121,7 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::room(&surface_config);
+        let scene = Scene::balls(&surface_config);
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
@@ -214,21 +212,14 @@ impl App {
             state.resize_surface(width, height);
         }
     }
-    pub fn clear_accumulation(&mut self) {
-        let state = self.state.as_mut().unwrap();
-        state.params.frames = -1;
-        state.queue.write_buffer(
-            &state.params_buffer,
-            0,
-            bytemuck::cast_slice(&[state.params]),
-        );
-    }
 
     pub fn update(&mut self, dt: Duration) {
         let state = self.state.as_mut().unwrap();
         state.dt = dt;
         state.scene.camera.update_camera(dt);
-
+        if state.scene.camera.controller.is_moving() {
+            state.params.frames = -1;
+        }
         if state.params.accumulate != 0 {
             state.params.frames += 1;
         } else {
@@ -252,7 +243,7 @@ impl App {
                 }
                 _ => (),
             }
-            state.params.frames = -1;
+            // state.params.frames = -1;
             state.prev_scene = state.selected_scene;
         }
         state.queue.write_buffer(
@@ -303,9 +294,6 @@ impl App {
                     .controller
                     .process_keyboard(*key, *key_state),
             },
-            WindowEvent::MouseWheel { delta, .. } => {
-                state.scene.camera.controller.process_scroll(delta)
-            }
             WindowEvent::MouseInput {
                 button: winit::event::MouseButton::Left,
                 state: button_state,
@@ -319,17 +307,8 @@ impl App {
     }
 
     fn handle_redraw(&mut self) {
-        if self
-            .state
-            .as_ref()
-            .unwrap()
-            .scene
-            .camera
-            .controller
-            .is_moving()
-        {
-            self.clear_accumulation();
-        }
+        let state = self.state.as_mut().unwrap();
+
         // Skip if window is minimized (maybe unwanted behaviour)
         if let Some(window) = self.window.as_ref() {
             if let Some(min) = window.is_minimized() {
@@ -339,8 +318,6 @@ impl App {
                 }
             }
         }
-
-        let state = self.state.as_mut().unwrap();
 
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [state.surface_config.width, state.surface_config.height],
@@ -372,28 +349,20 @@ impl App {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         let window = self.window.as_mut().unwrap();
+        let mut camera = state.scene.camera.clone();
+        let mut params = state.params.clone();
+
         // Ray Tracer Pass
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("RayTracer Compute Pass"),
-                timestamp_writes: None,
-            });
-            let xdim = state.params.width + WORKGROUP_SIZE.0 - 1;
-            let xgroups = xdim / WORKGROUP_SIZE.0;
-            let ydim = state.params.height + WORKGROUP_SIZE.1 - 1;
-            let ygroups = ydim / WORKGROUP_SIZE.1;
+        state
+            .ray_tracer
+            .render(&mut encoder, params.width, params.height);
 
-            compute_pass.set_pipeline(&state.ray_tracer.pipeline);
-            compute_pass.set_bind_group(0, &state.ray_tracer.bind_group, &[]);
-            compute_pass.dispatch_workgroups(xgroups, ygroups, 1);
-        }
-
-        // RENDER
+        // Render egui and Ray Tracer output
         {
             state.egui_renderer.begin_frame(window);
 
-            let mut skybox = state.params.skybox != 0;
-            let mut accumulate = state.params.accumulate != 0;
+            let mut skybox = params.skybox != 0;
+            let mut accumulate = params.accumulate != 0;
             egui::TopBottomPanel::top("menu").show(state.egui_renderer.context(), |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button("File", |ui| {
@@ -404,57 +373,82 @@ impl App {
                 });
             });
 
-            egui::SidePanel::right("Scene")
+            egui::SidePanel::right("Inspector")
                 .resizable(true)
                 .width_range(200.0..=400.0)
                 .show(state.egui_renderer.context(), |ui| {
-                    ui.heading("Scene");
+                    ui.heading("Inspector");
                     ui.separator();
+                    ui.heading("Camera");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::DragValue::new(&mut camera.origin.x).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.origin.y).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.origin.z).speed(0.01));
+                        ui.label(format!("Position"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.add(egui::DragValue::new(&mut camera.look_at.x).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.look_at.y).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.look_at.z).speed(0.01));
+                        ui.label(format!("Look At"));
+                    });
+                    ui.add(egui::Slider::new(&mut camera.fov, 10.0..=90.0).text("Fov"));
+                    ui.add(
+                        egui::Slider::new(&mut params.number_of_bounces, 0..=100).text("Bounces"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut params.rays_per_pixel, 0..=100)
+                            .text("Rays Per Pixel"),
+                    );
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut accumulate, "Accumulate");
+                        if ui.button("Clear").clicked() {
+                            params.frames = -1;
+                        }
+                    });
+
+                    ui.add(
+                        egui::Slider::new(&mut camera.focus_dist, 0.0..=10.0)
+                            .text("Focus Distance"),
+                    );
+                    ui.add(egui::Slider::new(&mut camera.aperture, -2.0..=2.0).text("Aperture"));
+                    ui.separator();
+                    ui.heading("Scene");
+                    ui.checkbox(&mut skybox, "Skybox");
+                    ui.horizontal(|ui| {
+                        ui.label("Scene ID");
+                        ui.add(egui::DragValue::new(&mut state.selected_scene).range(0..=3));
+                    });
+                    ui.separator();
+                    ui.heading("Entities");
                     ui.label(format!("Meshes: {:#?}", state.scene.meshes.len()));
                     ui.label(format!("Spheres: {:#?}", state.scene.spheres.len()));
+                    if ui.button("Delete shpere").clicked() {
+                        state.scene.spheres.pop();
+                    }
                 });
 
             egui::SidePanel::left("Debug")
                 .resizable(true)
-                .width_range(200.0..=400.0)
+                .width_range(200.0..=350.0)
                 .show(state.egui_renderer.context(), |ui| {
                     ui.heading("Debug");
                     ui.separator();
-                    ui.label(format!("Frame: {}", state.params.frames));
-                    ui.label(format!(
-                        "FPS: {:.0}",
-                        1.0 / (1.0 * state.dt.as_secs_f64()) // state.renderer.dt.as_micros()
-                    ));
-                    ui.label(format!("Position: ({})", state.scene.camera.origin));
-                    ui.label(format!("Look At: ({})", state.scene.camera.look_at));
-                    ui.add(egui::Slider::new(&mut state.scene.camera.fov, 10.0..=90.0).text("Fov"));
-                    ui.add(
-                        egui::Slider::new(&mut state.params.number_of_bounces, 0..=100)
-                            .text("Bounces"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut state.params.rays_per_pixel, 0..=100)
-                            .text("Rays Per Pixel"),
-                    );
-                    // ui.label("Skybox");
-                    ui.checkbox(&mut skybox, "Skybox");
-                    // ui.label("Accumulate");
-                    ui.checkbox(&mut accumulate, "Accumulate");
-
-                    ui.add(
-                        egui::Slider::new(&mut state.scene.camera.focus_dist, 0.0..=10.0)
-                            .text("Focus Distance"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut state.scene.camera.aperture, -2.0..=2.0)
-                            .text("Aperture"),
-                    );
-                    ui.add(egui::Slider::new(&mut state.selected_scene, 0..=3).text("Scene ID"));
-                    if ui.button("Delete shpere").clicked() {
-                        println!("{:#?}", state.scene.spheres.len());
-                        state.scene.spheres.pop();
-                        println!("{:#?}", state.scene.spheres.len());
-                    }
+                    ui.label(format!("Frame: {}", params.frames));
+                    ui.label(format!("FPS: {:.0}", 1.0 / (1.0 * state.dt.as_secs_f64())));
+                    ui.horizontal(|ui| {
+                        ui.label("Resolution");
+                        ui.add(
+                            egui::DragValue::new(&mut params.width)
+                                .update_while_editing(false)
+                                .range(1..=1920),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut params.height)
+                                .update_while_editing(false)
+                                .range(1..=1080),
+                        );
+                    });
                 });
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {
@@ -469,7 +463,15 @@ impl App {
                 });
             });
 
-            // state.prev_scene = state.selected_scene;
+            if params != state.params {
+                state.params = params;
+                state.params.frames = -1;
+            }
+            if camera != state.scene.camera {
+                state.scene.camera = camera;
+                state.params.frames = -1;
+            }
+
             state.params.skybox = skybox as i32;
             state.params.accumulate = accumulate as i32;
 
@@ -510,7 +512,13 @@ impl ApplicationHandler for App {
                         .camera
                         .controller
                         .process_mouse(delta.0, delta.1);
-                    self.clear_accumulation();
+                    state.params.frames = -1;
+                }
+            }
+            DeviceEvent::MouseWheel { delta } => {
+                if state.use_mouse {
+                    state.scene.camera.controller.process_scroll(&delta);
+                    state.params.frames = -1;
                 }
             }
             _ => {}

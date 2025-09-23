@@ -9,10 +9,11 @@ use crate::core::{
     texture::Texture,
 };
 
+const WORKGROUP_SIZE: (u32, u32) = (16, 16);
+
 pub struct RayTracer {
     pub pipeline: wgpu::ComputePipeline,
     pub bind_group: wgpu::BindGroup,
-    bind_group_layout: wgpu::BindGroupLayout,
     pub sphere_buffer: wgpu::Buffer,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
@@ -206,7 +207,6 @@ impl RayTracer {
         Self {
             pipeline,
             bind_group,
-            bind_group_layout,
             vertex_buffer,
             index_buffer,
             sphere_buffer,
@@ -226,46 +226,20 @@ impl RayTracer {
             bytemuck::cast_slice(&[scene.to_uniform()]),
         );
     }
-
-    pub fn update_bind_group(
-        &mut self,
-        device: &wgpu::Device,
-        texture: &Texture,
-        params_buffer: &wgpu::Buffer,
-    ) {
-        self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("RayTracer Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.scene_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: texture.binding_resource(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: self.sphere_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: self.vertex_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: self.index_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: self.mesh_buffer.as_entire_binding(),
-                },
-            ],
+    pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder, width: u32, height: u32) {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("RayTracer Compute Pass"),
+            timestamp_writes: None,
         });
+        let xdim = width + WORKGROUP_SIZE.0 - 1;
+        let xgroups = xdim / WORKGROUP_SIZE.0;
+        let ydim = height + WORKGROUP_SIZE.1 - 1;
+        let ygroups = ydim / WORKGROUP_SIZE.1;
+
+        compute_pass.set_pipeline(&self.pipeline);
+        compute_pass.set_bind_group(0, &self.bind_group, &[]);
+        compute_pass.dispatch_workgroups(xgroups, ygroups, 1);
     }
+
+    
 }

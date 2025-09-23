@@ -34,7 +34,7 @@ pub struct CameraUniform {
     pub lens_radius: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
     pub origin: Vec3,
     pub look_at: Vec3,
@@ -48,6 +48,7 @@ pub struct Camera {
     pub controller: CameraController,
 }
 
+#[allow(unused)]
 pub struct CameraDescriptor {
     pub origin: Vec3,
     pub look_at: Vec3,
@@ -82,9 +83,11 @@ impl Camera {
         let w = (self.origin - self.look_at).normalize();
         let u = self.view_up.cross(w).normalize();
         let v = w.cross(u);
-        let horizontal = 2.0 * half_width * u;
-        let vertical = 2.0 * half_height * v;
-        let lower_left_corner = self.origin - half_width * u - half_height * v - self.near * w;
+        let half_width_u = half_width * u;
+        let half_height_v = half_height * v;
+        let horizontal = 2.0 * half_width_u;
+        let vertical = 2.0 * half_height_v;
+        let lower_left_corner = self.origin - half_width_u - half_height_v - self.near * w;
 
         CameraUniform {
             origin: self.origin.to_array(),
@@ -143,9 +146,10 @@ impl Camera {
         self.origin.y +=
             (self.controller.amount_up - self.controller.amount_down) * self.controller.speed * dt;
 
+        let scalar = self.controller.sensitivity * dt;
         // Rotate
-        yaw += self.controller.rotate_horizontal * self.controller.sensitivity * dt;
-        pitch += -self.controller.rotate_vertical * self.controller.sensitivity * dt;
+        yaw += self.controller.rotate_horizontal * scalar;
+        pitch += -self.controller.rotate_vertical * scalar;
 
         // If process_mouse isn't called every frame, these values
         // will not get set to zero, and the camera will rotate
@@ -167,7 +171,7 @@ impl Camera {
             );
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraController {
     amount_left: f32,
     amount_right: f32,
@@ -207,10 +211,10 @@ impl CameraController {
             self.amount_backward,
             self.amount_up,
             self.amount_down,
-            self.scroll.abs(),
+            self.scroll,
         ]
         .iter()
-        .any(|&x| x > 0.0)
+        .any(|&x| x != 0.0)
     }
 
     pub fn process_keyboard(&mut self, key: KeyCode, state: ElementState) -> bool {
