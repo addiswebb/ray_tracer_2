@@ -392,6 +392,25 @@ impl App {
 
             let mut skybox = state.params.skybox != 0;
             let mut accumulate = state.params.accumulate != 0;
+            egui::TopBottomPanel::top("menu").show(state.egui_renderer.context(), |ui| {
+                egui::MenuBar::new().ui(ui, |ui| {
+                    ui.menu_button("File", |ui| {
+                        if ui.button("Quit").clicked() {
+                            log::warn!("idk how to close the window like this..");
+                        }
+                    });
+                });
+            });
+
+            egui::SidePanel::right("Scene")
+                .resizable(true)
+                .width_range(200.0..=400.0)
+                .show(state.egui_renderer.context(), |ui| {
+                    ui.heading("Scene");
+                    ui.separator();
+                    ui.label(format!("Meshes: {:#?}", state.scene.meshes.len()));
+                    ui.label(format!("Spheres: {:#?}", state.scene.spheres.len()));
+                });
 
             egui::SidePanel::left("Debug")
                 .resizable(true)

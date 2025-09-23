@@ -4,13 +4,13 @@ use crate::core::app;
 mod core;
 
 fn main() {
-    #[cfg(not(target_arch="wasm32"))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         pollster::block_on(run());
     }
 }
 
-async fn run(){
+async fn run() {
     env_logger::builder()
         .filter_module("ray_tracer", log::LevelFilter::Info)
         .filter_module("wgpu_core", log::LevelFilter::Warn)
