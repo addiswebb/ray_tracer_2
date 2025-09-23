@@ -9,7 +9,7 @@ use egui_wgpu::{
 };
 use winit::{
     application::ApplicationHandler,
-    dpi::{LogicalPosition, PhysicalSize},
+    dpi::PhysicalSize,
     event::{DeviceEvent, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
@@ -102,8 +102,8 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         let params = Params {
-            width: surface_config.width,
-            height: surface_config.height,
+            width: 1920,
+            height: 1080,
             number_of_bounces: 3,
             rays_per_pixel: 3,
             skybox: 1,
@@ -212,37 +212,6 @@ impl App {
         if width > 0 && height > 0 {
             let state = self.state.as_mut().unwrap();
             state.resize_surface(width, height);
-            state.surface_config.width = width;
-            state.surface_config.height = height;
-            state.scene.camera.aspect = width as f32 / height as f32;
-            state
-                .surface
-                .configure(&state.device, &state.surface_config);
-
-            state.params.width = width;
-            state.params.height = height;
-            state.params.frames = -1;
-
-            state.queue.write_buffer(
-                &state.params_buffer,
-                0,
-                bytemuck::cast_slice(&[state.params]),
-            );
-            state.texture = Texture::new(
-                &state.device,
-                width,
-                height,
-                wgpu::TextureFormat::Rgba32Float,
-            );
-            state
-                .ray_tracer
-                .update_bind_group(&state.device, &state.texture, &state.params_buffer);
-            state.renderer.update_bind_group(
-                &state.device,
-                &state.texture,
-                &state.params_buffer,
-                &mut state.egui_renderer.renderer,
-            );
         }
     }
     pub fn clear_accumulation(&mut self) {
@@ -266,6 +235,26 @@ impl App {
             // Reset Accumulation
             state.params.frames = -1;
         }
+        if state.selected_scene != state.prev_scene {
+            log::info!("Changing Scene: {}", state.selected_scene);
+            match state.selected_scene {
+                0 => {
+                    state.scene = Scene::balls(&state.surface_config);
+                }
+                1 => {
+                    state.scene = Scene::random_balls(&state.surface_config);
+                }
+                2 => {
+                    state.scene = Scene::room(&state.surface_config);
+                }
+                3 => {
+                    state.scene = Scene::metal(&state.surface_config);
+                }
+                _ => (),
+            }
+            state.params.frames = -1;
+            state.prev_scene = state.selected_scene;
+        }
         state.queue.write_buffer(
             &state.params_buffer,
             0,
@@ -276,6 +265,9 @@ impl App {
 
     fn handle_input(&mut self, event: &WindowEvent) -> bool {
         let state = self.state.as_mut().unwrap();
+        if !state.use_mouse {
+            return false;
+        }
         match event {
             WindowEvent::KeyboardInput {
                 event:
@@ -295,6 +287,16 @@ impl App {
                         .unwrap();
                     true
                 }
+                KeyCode::KeyQ => {
+                    if key_state.is_pressed() {
+                        state.selected_scene += 1;
+                        if state.selected_scene > 3 {
+                            state.selected_scene = 0;
+                        }
+                    }
+                    true
+                }
+
                 _ => state
                     .scene
                     .camera
@@ -376,9 +378,9 @@ impl App {
                 label: Some("RayTracer Compute Pass"),
                 timestamp_writes: None,
             });
-            let xdim = state.surface_config.width + WORKGROUP_SIZE.0 - 1;
+            let xdim = state.params.width + WORKGROUP_SIZE.0 - 1;
             let xgroups = xdim / WORKGROUP_SIZE.0;
-            let ydim = state.surface_config.height + WORKGROUP_SIZE.1 - 1;
+            let ydim = state.params.height + WORKGROUP_SIZE.1 - 1;
             let ygroups = ydim / WORKGROUP_SIZE.1;
 
             compute_pass.set_pipeline(&state.ray_tracer.pipeline);
@@ -467,32 +469,7 @@ impl App {
                 });
             });
 
-            if !(state.selected_scene == state.prev_scene) {
-                log::info!("Changing Scene: {}", state.selected_scene);
-                match state.selected_scene {
-                    0 => {
-                        state.scene = Scene::balls(&state.surface_config);
-                    }
-                    1 => {
-                        state.scene = Scene::random_balls(&state.surface_config);
-                    }
-                    2 => {
-                        state.scene = Scene::room(&state.surface_config);
-                    }
-                    3 => {
-                        state.scene = Scene::metal(&state.surface_config);
-                    }
-                    _ => (),
-                }
-                state.ray_tracer.update_buffers(&state.queue, &state.scene);
-                state.params.frames = -1;
-                state.queue.write_buffer(
-                    &state.params_buffer,
-                    0,
-                    bytemuck::cast_slice(&[state.params]),
-                );
-            }
-            state.prev_scene = state.selected_scene;
+            // state.prev_scene = state.selected_scene;
             state.params.skybox = skybox as i32;
             state.params.accumulate = accumulate as i32;
 
@@ -534,16 +511,6 @@ impl ApplicationHandler for App {
                         .controller
                         .process_mouse(delta.0, delta.1);
                     self.clear_accumulation();
-                }
-            }
-            DeviceEvent::Button { button, state: x } => {
-                if button == 0 {
-                    state.mouse_pressed = x == winit::event::ElementState::Pressed;
-                }
-            }
-            DeviceEvent::MouseWheel { delta } => {
-                if state.use_mouse {
-                    state.scene.camera.controller.process_scroll(&delta);
                 }
             }
             _ => {}
