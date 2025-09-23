@@ -111,7 +111,7 @@ impl AppState {
             accumulate: 1,
         };
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("parameters buffer"),
+            label: Some("Param buffer"),
             contents: bytemuck::bytes_of(&params),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -188,7 +188,7 @@ impl App {
         let initial_height = 600;
 
         let _ = window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
-        // window.set_maximized(true);
+        window.set_maximized(true);
 
         let surface = self
             .instance
