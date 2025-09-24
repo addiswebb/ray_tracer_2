@@ -3,14 +3,16 @@ struct Params{
     height: u32,
     number_of_bounces: i32,
     rays_per_pixel: i32,
-    toggle: i32,
+    skybox: i32,
     frames: i32,
 };
 struct Material{
     color: vec4<f32>,
     emission_color: vec4<f32>,
+    specular_color: vec4<f32>,
     emission_strength: f32,
     smoothness: f32,
+    specular: f32,
 }
 
 struct Sphere{
@@ -31,43 +33,6 @@ struct Mesh{
     pos: vec3<f32>,
     material: Material,
 };
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-@group(0) @binding(1)
-var<uniform> scene: Scene;
-@group(0) @binding(2)
-var texture: texture_storage_2d<rgba32float,read_write>;
-@group(0) @binding(3)
-var<storage,read> spheres: array<Sphere>;
-@group(0) @binding(4)
-var<storage,read> vertices: array<Vertex>;
-@group(0) @binding(5)
-var<storage,read> indices: array<u32>;
-@group(0) @binding(6)
-var<storage,read> meshes: array<Mesh>;
-
-const epsilon: f32 = 1e-4;
-
-@compute
-@workgroup_size(16,16)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    var i: FragInput;
-
-    i.pos = vec2<f32>(f32(global_id.x),f32(global_id.y));
-    i.size = vec2<f32>(f32(params.width),f32(params.height));
-
-    let pos = vec2<i32>(i32(i.pos.x),i32(i.pos.y));
-    if(params.frames >= 1){
-        let weight = 1.0 / f32(params.frames);
-        let prev_color = textureLoad(texture,pos);
-        let new_color = prev_color * vec4<f32>(1.0 - weight) + frag(i) * weight;
-        textureStore(texture, pos, new_color);
-    }else{
-        textureStore(texture, pos, frag(i));
-    }
-}
-
 struct Scene{
     spheres: u32,
     vertices: u32,
@@ -107,6 +72,43 @@ struct Hit{
     material: Material,
 }
 
+@group(0) @binding(0)
+var<uniform> params: Params;
+@group(0) @binding(1)
+var<uniform> scene: Scene;
+@group(0) @binding(2)
+var texture: texture_storage_2d<rgba32float,read_write>;
+@group(0) @binding(3)
+var<storage,read> spheres: array<Sphere>;
+@group(0) @binding(4)
+var<storage,read> vertices: array<Vertex>;
+@group(0) @binding(5)
+var<storage,read> indices: array<u32>;
+@group(0) @binding(6)
+var<storage,read> meshes: array<Mesh>;
+
+const epsilon: f32 = 1e-5;
+
+@compute
+@workgroup_size(16,16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    var i: FragInput;
+
+    i.pos = vec2<f32>(f32(global_id.x),f32(global_id.y));
+    i.size = vec2<f32>(f32(params.width),f32(params.height));
+
+    let pos = vec2<i32>(i32(i.pos.x),i32(i.pos.y));
+    let current_sample = frag(i);
+    if(params.frames >= 1){
+        let prev_color = textureLoad(texture,pos);
+        let weight = 1.0 / f32(params.frames+1);
+        let new_color = prev_color * (1.0 - weight) + current_sample * weight;
+        textureStore(texture, pos, new_color);
+    }else{
+        textureStore(texture, pos, current_sample);
+    }
+}
+
 const SKY_HORIZON: vec4<f32> = vec4<f32>(1.0,1.0,1.0,0.0);
 const SKY_ZENITH: vec4<f32> = vec4<f32>(0.0788092, 0.36480793, 0.7264151, 0.0);
 const GROUND_COLOR: vec4<f32> = vec4<f32>(0.35,0.3,0.35, 0.0);
@@ -121,20 +123,24 @@ fn safe_normalize(vec: vec3<f32>) -> vec3<f32>{
     return n;
 }
 
-fn ray_sphere(ray: Ray, pos: vec3<f32>, radius: f32) -> Hit{
+fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32) -> Hit{
     var hit: Hit;
-    let oc = ray.origin - pos;
+    let offest_ray_origin = ray.origin - centre;
+    // ax^2+bx+c=0
+    // Represents a quadratic from sqrt(ray.origin + ray.dir * ray.dst) = radius^2
     let a = dot(ray.dir,ray.dir);
-    let b = 2.0 * dot(oc, ray.dir);
-    let c = dot(oc,oc) - pow(radius,2.0);
+    let b = 2.0 * dot(offest_ray_origin, ray.dir);
+    let c = dot(offest_ray_origin,offest_ray_origin) - pow(radius,2.0);
     let discriminant = b * b - 4.0 * a * c;
+    // No solution to quadratic
     if discriminant >= 0.0{
+        // Solve quadratic for distance
         let dst = (-b - sqrt(discriminant))/(2.0*a);
-        if dst > epsilon{
+        if dst >= epsilon {
             hit.hit = true;
             hit.hit_point = ray.origin + ray.dir * dst;
             hit.dst = dst;
-            hit.normal = safe_normalize(hit.hit_point - pos);
+            hit.normal = safe_normalize(hit.hit_point - centre);
         }
     }
     return hit;
@@ -259,48 +265,45 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32>{
     for (var i = 0; i <= params.number_of_bounces; i +=1){
         var hit = calculate_ray_collions(ray);
         if (hit.hit){
+            let is_specular_bounce = hit.material.specular >= rand(seed);
             ray.origin = hit.hit_point;
-            let unit_dir = safe_normalize(ray.dir);
-            //TODO look into different random hemisphere generators
-            //-1.0 is for glass
-            if(hit.material.smoothness < 0.0){
-                hit.material.color = vec4<f32>(1.0);
+            let unit_ray_dir = safe_normalize(ray.dir);
+            // Used for glass
+            if (hit.material.smoothness < 0.0){
+                var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
+                var refractive_index = -hit.material.smoothness;
+                refractive_index = select(refractive_index, 1.0/refractive_index, front_face);
 
-                var front_face = false;
-                if(dot(ray.dir, hit.normal) > 0.0){
-                    front_face = false;
+                let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
+                let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+                let cannot_refract = refractive_index * sin_theta > 1.0;
+                if (cannot_refract || reflectance(cos_theta, refractive_index) > rand(seed)){
+                    ray.dir = reflect(unit_ray_dir, hit.normal);
                 }else{
-                    front_face = true;
+                    ray.dir = refract(unit_ray_dir, hit.normal, refractive_index);
                 }
-                //TODO get refraction_ratio from material
-                // var refraction_ratio = 1.5;
-                var refraction_ratio = -hit.material.smoothness;
-                if(front_face){
-                    refraction_ratio = 1.0/1.5;
-                }
-
-                // let cos_theta = min(dot(-unit_dir, hit.normal),1.0);
-                let cos_theta = clamp(dot(-unit_dir, hit.normal), -1.0, 1.0);
-                let sin_theta = sqrt(1.0 - cos_theta*cos_theta);
-
-                let cannot_refract = refraction_ratio * sin_theta > 1.0;
-
-                if(cannot_refract || reflectance(cos_theta,refraction_ratio) > rand(seed)){
-                    ray.dir = reflect(unit_dir, hit.normal);
-                }else{
-                    ray.dir = refract(unit_dir,hit.normal,refraction_ratio);
-                }
-            } else{
-                var diffuse_dir = rand_hemisphere_dir_dist(hit.normal, seed);
-                let specular_dir = reflect(unit_dir, hit.normal);
-                ray.dir = mix(diffuse_dir,specular_dir,hit.material.smoothness);
+            }else{
+                let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
+                let specular_dir = reflect(unit_ray_dir, hit.normal);
+                ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
             }
 
             let emitted_light = hit.material.emission_color * hit.material.emission_strength;
             incoming_light += emitted_light * ray_color;
-            ray_color *= hit.material.color;
+            if (is_specular_bounce){
+                ray_color *= hit.material.specular_color;
+            }else{
+                ray_color *= hit.material.color;
+            }
+            let p = max(ray_color.x, max(ray_color.y, ray_color.z));
+            if (rand(seed) >= p){
+                break;
+            }
+            ray_color *= 1.0 / p;
+
         }else{
-            if(params.toggle != 0){
+            // Use get_environment_light if skybox is enabled
+            if(params.skybox != 0){
                 incoming_light += get_environment_light(ray) * ray_color;
             }
             break;
@@ -333,10 +336,9 @@ fn get_environment_light(ray: Ray) -> vec4<f32>{
 
 fn frag(i: FragInput) -> vec4<f32>{
     let pixel_coord = i.pos * i.size;
-    var rng_state = u32(pixel_coord.y * i.size.x + pixel_coord.x)+u32(abs(params.frames)) * 71939u;
+    var rng_state = u32(pixel_coord.y * i.size.x + pixel_coord.x)+u32(abs(params.frames)) * 719393u;
 
     var total_incoming_light = vec4<f32>(0.0);
-
     for (var j = 0; j <= params.rays_per_pixel; j+=1){
         let anti_aliasing = vec2<f32>(rand(&rng_state),rand(&rng_state));
         let pos = (i.pos + anti_aliasing) / i.size;
@@ -350,9 +352,6 @@ fn frag(i: FragInput) -> vec4<f32>{
 
         total_incoming_light += trace(ray, &rng_state);
     }
-    let color = total_incoming_light/f32(params.rays_per_pixel);
-    if (color.x != color.x || color.y != color.y || color.z != color.z){
-        return vec4<f32>(1.0, 0.0, 1.0, 1.0);
-    }
+    let color = total_incoming_light / f32(params.rays_per_pixel);
     return color;
 }

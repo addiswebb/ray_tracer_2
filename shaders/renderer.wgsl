@@ -33,7 +33,7 @@ struct Params{
     height: u32,
     number_of_bounces: i32,
     rays_per_pixel: i32,
-    toggle: i32,
+    skybox: i32,
     frames: u32,
 };
 

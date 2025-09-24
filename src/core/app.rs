@@ -106,7 +106,7 @@ impl AppState {
             rays_per_pixel: 3,
             skybox: 1,
             frames: 0,
-            accumulate: 1,
+            accumulate: 0,
         };
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Param buffer"),

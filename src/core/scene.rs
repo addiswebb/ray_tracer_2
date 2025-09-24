@@ -93,11 +93,7 @@ impl Scene {
                 _padding: 0.0,
                 pos: mesh.position.into(),
                 _padding2: 0.0,
-                color: mesh.material.color,
-                emission_color: mesh.material.emission_color,
-                emission_strength: mesh.material.emission_strength,
-                specular: mesh.material.specular,
-                _padding3: [0.0, 0.0],
+                material: mesh.material,
             });
             first += mesh.indices.len() as u32;
         }
@@ -122,10 +118,7 @@ impl Scene {
         scene.add_sphere(Sphere::new(
             Vec3::new(4.0, 1.0, 0.0),
             0.2,
-            Vec4::new(1.0, 1.0, 1.0, 1.0),
-            Vec4::ONE,
-            10.0,
-            1.0,
+            Material::new().emissive([1.0, 1.0, 1.0, 1.0], 2.0),
         ));
 
         scene.load_mesh(Path::new("Suzanne.obj")).await;
@@ -150,34 +143,20 @@ impl Scene {
             Sphere::new(
                 Vec3::new(0.0, -1000.0, 0.0),
                 1000.0,
-                Vec4::new(0.5, 0.5, 0.5, 1.0),
-                Vec4::ZERO,
-                0.0,
-                0.0,
+                Material::new().color([0.5, 0.5, 0.5, 1.0]),
             ),
-            Sphere::new(
-                Vec3::new(0.0, 1.0, 0.0),
-                1.0,
-                Vec4::ONE,
-                Vec4::ZERO,
-                0.0,
-                -1.0,
-            ),
+            Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0, Material::new().glass(1.5)),
             Sphere::new(
                 Vec3::new(-4.0, 1.0, 0.0),
                 1.0,
-                Vec4::new(0.4, 0.2, 0.1, 1.0),
-                Vec4::ZERO,
-                0.0,
-                0.0,
+                Material::new().color([0.4, 0.2, 0.1, 1.0]),
             ),
             Sphere::new(
                 Vec3::new(4.0, 1.0, 0.0),
                 1.0,
-                Vec4::new(0.7, 0.6, 0.5, 1.0),
-                Vec4::ZERO,
-                0.0,
-                0.9,
+                Material::new()
+                    .color([0.7, 0.6, 0.5, 1.0])
+                    .specular([1.0, 1.0, 1.0, 1.0], 0.9),
             ),
         ]);
 
@@ -194,31 +173,30 @@ impl Scene {
                 );
                 if (center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
                     if mat < 0.8 {
-                        let albedo = Vec4::new(
+                        let albedo = [
                             rng.random::<f32>(),
                             rng.random::<f32>(),
                             rng.random::<f32>(),
                             1.0,
-                        );
-                        scene.add_sphere(Sphere::new(center, 0.2, albedo, Vec4::ZERO, 0.0, 0.0));
+                        ];
+                        scene.add_sphere(Sphere::new(center, 0.2, Material::new().color(albedo)));
                     } else if mat < 0.95 {
-                        let albedo = Vec4::new(
+                        let albedo = [
                             rng.random_range(0.5..1.0),
                             rng.random_range(0.5..1.0),
                             rng.random_range(0.5..1.0),
                             1.0,
-                        );
+                        ];
                         let fuzz = rng.random_range(0.0..0.5);
-                        scene.add_sphere(Sphere::new(center, 0.2, albedo, Vec4::ZERO, 0.0, fuzz));
-                    } else {
                         scene.add_sphere(Sphere::new(
                             center,
                             0.2,
-                            Vec4::ONE,
-                            Vec4::ZERO,
-                            0.0,
-                            -1.0,
+                            Material::new()
+                                .color(albedo)
+                                .specular([1.0, 1.0, 1.0, 1.0], fuzz),
                         ));
+                    } else {
+                        scene.add_sphere(Sphere::new(center, 0.2, Material::new().glass(1.3)));
                     }
                 }
             }
@@ -239,25 +217,6 @@ impl Scene {
             aperture: 0.0,
             focus_dist: 0.1,
         });
-
-        // scene.add_spheres(vec![
-        //     Sphere::new(
-        //         Vec3::new(4.0, 0.0, 1.7),
-        //         1.2,
-        //         Vec4::new(1.0, 1.0, 1.0, 1.0),
-        //         Vec4::new(0.0, 0.0, 0.0, 1.0),
-        //         0.0,
-        //         1.0,
-        //     ),
-        //     Sphere::new(
-        //         Vec3::new(4.0, 0.0, -1.7),
-        //         1.2,
-        //         Vec4::new(1.0, 1.0, 1.0, 1.0),
-        //         Vec4::new(0.0, 0.0, 0.0, 1.0),
-        //         0.0,
-        //         0.5,
-        //     ),
-        // ]);
 
         // Floor
         scene.add_mesh(Mesh {
@@ -290,7 +249,7 @@ impl Scene {
             position: Vec3::ZERO,
             size: Vec3::ONE,
             // material: Material::new().color([1.0, 1.0, 0.0, 1.0]),
-            material: Material::new().specular(0.99),
+            material: Material::new().specular([1.0, 1.0, 1.0, 1.0], 0.8),
             vertices: vec![
                 Vertex::new(Vec3::new(-1.0, 0.0, -1.0), Vec3::X),
                 Vertex::new(Vec3::new(-1.0, 2.0, -1.0), Vec3::X),
@@ -304,7 +263,7 @@ impl Scene {
             position: Vec3::ZERO,
             size: Vec3::ONE,
             // material: Material::new().color([0.0, 1.0, 0.0, 1.0]),
-            material: Material::new().specular(1.0),
+            material: Material::new().specular([1.0, 1.0, 1.0, 1.0], 0.8),
             vertices: vec![
                 Vertex::new(Vec3::new(1.0, 0.0, -1.0), -Vec3::X),
                 Vertex::new(Vec3::new(1.0, 0.0, 1.0), -Vec3::X),
@@ -341,7 +300,7 @@ impl Scene {
         scene.add_mesh(Mesh {
             position: Vec3::ZERO,
             size: Vec3::ONE,
-            material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 5.0),
+            material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 0.4),
             vertices: vec![
                 Vertex::new(Vec3::new(-0.4, 1.98, -0.4), -Vec3::Y),
                 Vertex::new(Vec3::new(0.4, 1.98, -0.4), -Vec3::Y),
@@ -353,21 +312,18 @@ impl Scene {
         scene.add_sphere(Sphere::new(
             Vec3::new(0.4, 1.0, 0.0),
             0.3,
-            Vec4::new(0.9, 0.9, 0.9, 1.0),
-            Vec4::ZERO,
-            0.0,
-            1.0,
+            Material::new().color([0.4, 0.9, 0.4, 1.0]).glass(1.34),
         ));
 
         // Right diffuse/specular sphere
         scene.add_sphere(Sphere::new(
             Vec3::new(-0.4, 1.0, 0.0),
             0.4,
-            Vec4::new(0.7, 0.7, 0.7, 1.0), // diffuse gray
-            Vec4::ZERO,
-            0.0,
-            0.2,
+            Material::new()
+                .color([0.7, 0.7, 0.7, 1.0])
+                .specular([1.0, 1.0, 1.0, 1.0], 0.2),
         ));
+        // scene.meshes = vec![];
         scene
     }
     pub fn metal(config: &wgpu::SurfaceConfiguration) -> Self {
@@ -389,34 +345,24 @@ impl Scene {
             Sphere::new(
                 Vec3::new(0.0, -100.5, -1.0),
                 100.0,
-                Vec4::new(0.8, 0.8, 0.0, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                0.0,
+                Material::new().color([0.8, 0.8, 0.0, 1.0]),
             ),
             Sphere::new(
                 Vec3::new(0.0, 0.0, -1.0),
                 0.5,
-                Vec4::new(0.7, 0.3, 0.3, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                0.0,
+                Material::new().color([0.7, 0.3, 0.3, 1.0]),
             ),
             Sphere::new(
                 Vec3::new(-1.0, 0.0, -1.0),
                 0.5,
-                Vec4::new(0.8, 0.8, 0.8, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                -1.0,
+                Material::new().color([0.8, 0.8, 0.8, 1.0]).glass(1.3),
             ),
             Sphere::new(
                 Vec3::new(1.0, 0.0, -1.0),
                 0.5,
-                Vec4::new(0.8, 0.6, 0.2, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                0.15,
+                Material::new()
+                    .color([0.8, 0.6, 0.2, 1.0])
+                    .specular([1.0, 1.0, 1.0, 1.0], 0.15),
             ),
         ]);
 
@@ -440,64 +386,49 @@ impl Scene {
             Sphere::new(
                 Vec3::new(-3.64, -0.42, 0.8028),
                 0.75,
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                0.7,
+                Material::new().specular([1.0, 1.0, 1.0, 1.0], 0.7),
             ),
             Sphere::new(
                 Vec3::new(-2.54, -0.72, 0.5),
                 0.6,
-                Vec4::new(1.0, 0.0, 0.0, 1.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
-                0.0,
-                0.5,
+                Material::new()
+                    .color([1.0, 0.0, 0.0, 1.0])
+                    .specular([1.0, 0.0, 0.0, 1.0], 0.5),
             ),
             Sphere::new(
                 Vec3::new(-1.27, -0.72, 1.0),
                 0.5,
-                Vec4::new(0.0, 1.0, 0.0, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.2,
+                Material::new()
+                    .color([0.0, 1.0, 0.0, 1.0])
+                    .specular([0.0, 1.0, 0.0, 1.0], 0.2),
             ),
             Sphere::new(
                 Vec3::new(-0.5, -0.9, 1.55),
                 0.35,
-                Vec4::new(0.0, 0.0, 1.0, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.0,
+                Material::new().color([0.0, 0.0, 1.0, 1.0]),
             ),
             /*  floor*/
             Sphere::new(
                 Vec3::new(-3.46, -15.88, 2.76),
                 15.0,
-                Vec4::new(0.5, 0.0, 0.8, 1.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                0.0,
-                0.0,
+                Material::new().color([0.5, 0.0, 0.8, 1.0]),
             ),
             /*  Light Object       */
             Sphere::new(
                 Vec3::new(-7.44, -0.72, 20.0),
                 15.0,
-                Vec4::new(0.1, 0.1, 0.1, 0.0),
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                2.0,
-                0.0,
+                Material::new()
+                    .color([0.1, 0.1, 0.1, 0.0])
+                    .emissive([1.0, 1.0, 1.0, 1.0], 1.0),
             ),
         ]);
 
         scene.add_mesh(Mesh {
             position: Vec3::ZERO,
             size: Vec3::ONE,
-            material: Material {
-                color: [0.0, 0.6, 0.0, 1.0],
-                emission_color: [1.0, 1.0, 1.0, 1.0],
-                emission_strength: 0.0,
-                specular: 0.5,
-            },
+            material: Material::new()
+                .color([0.0, 0.6, 0.0, 1.0])
+                .specular([1.0, 1.0, 1.0, 1.0], 0.5),
             vertices: vec![Vertex::new(
                 Vec3::new(0.0, 0.0, 1.0),
                 Vec3::new(2.0, -3.0, -1.0),

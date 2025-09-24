@@ -1,4 +1,4 @@
-use glam::{Vec3, Vec4};
+use glam::Vec3;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
@@ -25,30 +25,15 @@ impl Vertex {
 pub struct Sphere {
     position: [f32; 3],
     radius: f32,
-    color: [f32; 4],
-    emission_color: [f32; 4],
-    emission_strength: f32,
-    smoothness: f32,
-    _padding: [f32; 2],
+    material: Material,
 }
 
 impl Sphere {
-    pub fn new(
-        position: Vec3,
-        radius: f32,
-        color: Vec4,
-        emission_color: Vec4,
-        emission_strength: f32,
-        specular: f32,
-    ) -> Self {
+    pub fn new(position: Vec3, radius: f32, material: Material) -> Self {
         Self {
             position: position.to_array(),
             radius,
-            color: color.to_array(),
-            emission_color: emission_color.to_array(),
-            emission_strength,
-            _padding: [0.0; 2],
-            smoothness: if specular < 1.0 { specular } else { 1.0 },
+            material,
         }
     }
 }
@@ -58,8 +43,11 @@ impl Sphere {
 pub struct Material {
     pub color: [f32; 4],
     pub emission_color: [f32; 4],
+    pub specular_color: [f32; 4],
     pub emission_strength: f32,
+    pub smoothness: f32,
     pub specular: f32,
+    pub _padding: f32,
 }
 
 impl Material {
@@ -67,12 +55,16 @@ impl Material {
         Material {
             color: [1.0, 1.0, 1.0, 1.0],
             emission_color: [1.0, 1.0, 1.0, 1.0],
+            specular_color: [1.0, 1.0, 1.0, 1.0],
             emission_strength: 0.0,
+            smoothness: 0.2,
             specular: 0.5,
+            _padding: 0.0,
         }
     }
     pub fn color(&mut self, color: [f32; 4]) -> Self {
         self.color = color;
+        self.specular_color = color;
         *self
     }
 
@@ -83,11 +75,12 @@ impl Material {
     }
     #[allow(unused)]
     pub fn glass(&mut self, refractive_index: f32) -> Self {
-        self.specular = -refractive_index;
+        self.smoothness = -refractive_index;
         *self
     }
     #[allow(unused)]
-    pub fn specular(&mut self, specular: f32) -> Self {
+    pub fn specular(&mut self, color: [f32; 4], specular: f32) -> Self {
+        self.specular_color = color;
         self.specular = specular;
         *self
     }
@@ -97,9 +90,9 @@ impl Material {
 pub struct Mesh {
     pub position: Vec3,
     pub size: Vec3,
-    pub material: Material,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    pub material: Material,
 }
 
 #[repr(C)]
@@ -111,9 +104,5 @@ pub struct MeshUniform {
     pub _padding: f32,
     pub pos: [f32; 3],
     pub _padding2: f32,
-    pub color: [f32; 4],
-    pub emission_color: [f32; 4],
-    pub emission_strength: f32,
-    pub specular: f32,
-    pub _padding3: [f32; 2],
+    pub material: Material,
 }
