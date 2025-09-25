@@ -16,8 +16,7 @@ use winit::{
 };
 
 use crate::core::{
-    bvh::BVH, egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene,
-    texture::Texture,
+    egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
 };
 
 #[repr(C)]
@@ -107,8 +106,8 @@ impl AppState {
         let params = Params {
             width: 1920,
             height: 1080,
-            number_of_bounces: 3,
-            rays_per_pixel: 3,
+            number_of_bounces: 1,
+            rays_per_pixel: 1,
             skybox: 1,
             frames: 0,
             accumulate: 1,
@@ -486,41 +485,6 @@ impl App {
                         egui::Slider::new(&mut params.depth_threshhold, 1..=1000)
                             .text("Depth Threshold"),
                     );
-                    let mut max_nodes = state.scene.bvh.max_nodes;
-                    // let mut max_triangles = state.scene.bvh.max_triangles;
-                    let mut min_triangles_per_node = state.scene.bvh.min_triangles_per_node;
-                    ui.horizontal(|ui| {
-                        ui.label("Max Nodes");
-                        ui.add(
-                            egui::DragValue::new(&mut max_nodes)
-                                .speed(1)
-                                .range(1..=15000),
-                        );
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Min Triangle Per Node");
-                        ui.add(
-                            egui::DragValue::new(&mut min_triangles_per_node)
-                                .speed(1)
-                                .range(1..=15000),
-                        );
-                    });
-                    if ui.button("Rebuild BVH").clicked() {
-                        let (vertices, indices) = state.scene.vertices_and_indices();
-                        state.scene.bvh = BVH::build(
-                            &state.scene.meshes(),
-                            vertices,
-                            indices,
-                            max_nodes,
-                            state.scene.bvh.max_triangles,
-                            min_triangles_per_node,
-                        );
-                        state.params.frames = -1;
-                        state.average_frame_time = Duration::ZERO;
-                    }
-                    state.scene.bvh.max_nodes = max_nodes;
-                    state.scene.bvh.min_triangles_per_node = min_triangles_per_node;
                 });
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {

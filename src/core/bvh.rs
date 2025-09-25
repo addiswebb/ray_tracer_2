@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{f32::INFINITY, time::Instant};
 
 use glam::Vec3;
 
@@ -33,32 +33,20 @@ pub struct BVH {
     pub nodes: Vec<Node>,
     pub triangle_indices: Vec<u32>,
     pub n_nodes: u32,
-    pub max_nodes: u64,
-    pub max_triangles: u64,
-    pub min_triangles_per_node: usize,
 }
 
 impl BVH {
+    pub const MAX_NODES: u32 = 200000;
     pub fn empty() -> Self {
         Self {
             triangles: vec![],
             nodes: vec![],
             triangle_indices: vec![],
             n_nodes: 0,
-            max_nodes: 15000,
-            max_triangles: 15000,
-            min_triangles_per_node: 2,
         }
     }
-    pub fn build(
-        meshes: &Vec<MeshUniform>,
-        vertices: Vec<Vertex>,
-        indices: Vec<u32>,
-        max_nodes: u64,
-        max_triangles: u64,
-        min_triangles_per_node: usize,
-    ) -> Self {
-        let start_time = Instant::now();
+    pub fn build(meshes: &Vec<MeshUniform>, vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+        let mut stats = BVHStats::start();
         let number_of_triangles = indices.len() / 3;
         let mut triangles = Vec::with_capacity(number_of_triangles);
         if number_of_triangles == 0 {
@@ -67,16 +55,10 @@ impl BVH {
                 nodes: vec![],
                 triangle_indices: vec![],
                 n_nodes: 0,
-                max_nodes,
-                max_triangles,
-                min_triangles_per_node,
             };
         }
-        let mut nodes = Vec::with_capacity(max_nodes as usize);
-        println!("Max nodes: {max_nodes}");
-        for _ in 0..max_nodes {
-            nodes.push(Node::default())
-        }
+        let mut nodes = vec![Node::default(); BVH::MAX_NODES as usize];
+
         for mesh in meshes {
             let first = mesh.first as usize;
             let offset = mesh.offset as usize;
@@ -99,11 +81,9 @@ impl BVH {
                 })
             }
         }
-        let root = nodes.get_mut(0).unwrap();
-        root.left = 0;
-        root.right = 0;
-        root.first = 0;
-        root.count = number_of_triangles as u32;
+        // let root = nodes.get_mut(0).unwrap();
+        // root.count = number_of_triangles as u32;
+        nodes[0].count = number_of_triangles as u32;
 
         let mut bvh = Self {
             triangles,
@@ -113,19 +93,16 @@ impl BVH {
                 .map(|i| i as u32)
                 .collect::<Vec<u32>>(),
             n_nodes: 1,
-            max_nodes,
-            max_triangles,
-            min_triangles_per_node,
         };
         bvh.update_node_bounds(0);
-        bvh.subdivide(0);
-        println!("Generated BVH in {:?}", Instant::now() - start_time);
+        bvh.subdivide(0, 0, &mut stats);
+        stats.print();
         bvh
     }
     pub fn update_node_bounds(&mut self, i: usize) {
         let node = self.nodes.get_mut(i).unwrap();
-        node.aabb_min = [1e30, 1e30, 1e30];
-        node.aabb_max = [-1e30, -1e30, -1e30];
+        node.aabb_min = [INFINITY, INFINITY, INFINITY];
+        node.aabb_max = [-INFINITY, -INFINITY, -INFINITY];
         for i in 0..node.count as usize {
             let tri_index = self.triangle_indices[node.first as usize + i] as usize;
             let leaf_triangle = self.triangles[tri_index];
@@ -140,10 +117,12 @@ impl BVH {
         node.aabb_min = (Vec3::from_array(node.aabb_min)).to_array();
     }
 
-    pub fn subdivide(&mut self, node_idx: usize) {
+    pub fn subdivide(&mut self, node_idx: usize, depth: u64, stats: &mut BVHStats) {
         let parent_first = self.nodes[node_idx].first as usize;
         let parent_count = self.nodes[node_idx].count as usize;
-        if self.n_nodes as u64 >= self.max_nodes || parent_count < self.min_triangles_per_node {
+
+        if depth >= 32 || parent_count < 2 {
+            stats.record_leaf_node(parent_count as u32, depth as u32);
             return;
         }
         let aabb_max = self.nodes[node_idx].aabb_max;
@@ -175,6 +154,7 @@ impl BVH {
         }
         let left_count = (i - parent_first) as u32;
         if left_count == 0 || left_count == parent_count as u32 {
+            stats.record_leaf_node(parent_count as u32, depth as u32);
             return;
         }
 
@@ -201,11 +181,12 @@ impl BVH {
             parent.left = left_index as u32;
             parent.right = right_index as u32;
             parent.count = 0;
+            stats.record_node();
         }
         self.update_node_bounds(left_index as usize);
         self.update_node_bounds(right_index as usize);
-        self.subdivide(left_index as usize);
-        self.subdivide(right_index as usize);
+        self.subdivide(left_index as usize, depth + 1, stats);
+        self.subdivide(right_index as usize, depth + 1, stats);
     }
 
     pub fn fminf(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -222,5 +203,63 @@ impl BVH {
             c[i] = if a[i] > b[i] { a[i] } else { b[i] };
         }
         c
+    }
+}
+
+pub struct BVHStats {
+    start_time: Instant,
+    leaf_count: u32,
+    leaf_min_depth: u32,
+    leaf_max_depth: u32,
+    sum_depth: f32,
+    min_tris: u32,
+    max_tris: u32,
+    sum_tris: f32,
+    node_count: u32,
+}
+
+impl BVHStats {
+    pub fn start() -> Self {
+        Self {
+            start_time: Instant::now(),
+            leaf_count: 0,
+            leaf_min_depth: u32::MAX,
+            leaf_max_depth: 0,
+            sum_depth: 0.0,
+            min_tris: u32::MAX,
+            max_tris: 0,
+            sum_tris: 0.0,
+            node_count: 0,
+        }
+    }
+
+    pub fn record_leaf_node(&mut self, triangle_count: u32, depth: u32) {
+        self.record_node();
+
+        self.leaf_count += 1;
+        self.sum_depth += depth as f32;
+        self.leaf_min_depth = self.leaf_min_depth.min(depth);
+        self.leaf_max_depth = self.leaf_max_depth.max(depth);
+        self.sum_tris += triangle_count as f32;
+        self.max_tris = self.max_tris.max(triangle_count);
+        self.min_tris = self.min_tris.min(triangle_count);
+    }
+    pub fn record_node(&mut self) {
+        self.node_count += 1;
+    }
+    pub fn print(&self) {
+        let now = Instant::now();
+        println!("BVH: ({:#?})", now - self.start_time);
+        println!("Node Count: {}", self.node_count);
+        println!("Leaf Count: {}", self.leaf_count);
+        println!("Leaf Depth:");
+        println!(" - Max: {}", self.leaf_max_depth);
+        println!(" - Min: {}", self.leaf_min_depth);
+        println!(" - Mean: {}", self.sum_depth / self.leaf_count as f32);
+        println!("Leaf Triangles: ");
+        println!(" - Max: {}", self.max_tris);
+        println!(" - Min: {}", self.min_tris);
+        println!(" - mean: {}", self.sum_tris / self.leaf_count as f32);
+        println!(" - Total: {}", self.sum_tris);
     }
 }

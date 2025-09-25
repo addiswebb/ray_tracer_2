@@ -60,7 +60,7 @@ impl Scene {
     pub fn bvh(&mut self, meshes: &Vec<MeshUniform>) -> &Vec<Node> {
         if self.bvh.n_nodes == 0 && self.meshes.len() > 0 {
             let (vertices, indices) = self.vertices_and_indices();
-            self.bvh = BVH::build(meshes, vertices, indices, 15000, 15000, 2);
+            self.bvh = BVH::build(meshes, vertices, indices);
         }
         &self.bvh.nodes
     }
@@ -133,7 +133,7 @@ impl Scene {
         //     Material::new().color([1.0, 0.0, 0.0, 1.0]),
         // ));
 
-        scene.load_mesh(Path::new("dragon.obj")).await;
+        scene.load_mesh(Path::new("dragon_large.obj")).await;
 
         scene
     }
@@ -532,7 +532,7 @@ pub async fn load_model_obj(path: &Path) -> Vec<Mesh> {
         meshes.push(Mesh {
             position: Vec3::ZERO,
             size: Vec3::ONE,
-            material: Material::new().color([0.2, 0.2, 0.8, 1.0]),
+            material: Material::new().color([0.2, 0.2, 0.8, 1.0]).glass(1.5),
             vertices,
             indices,
         });

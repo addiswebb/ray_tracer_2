@@ -175,7 +175,7 @@ fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit{
     let dao = cross(ao, ray.dir);
 
     let determinant = -dot(ray.dir, normal);
-    if determinant < epsilon {
+    if determinant < 0.0000001 {
         hit.hit = false;
         return hit;
     }
@@ -210,35 +210,41 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit{
    while(stack_index > 0){
         stack_index -= 1;
         let node = nodes[stack[stack_index]];
+        // Is Leaf node?
+        if node.count > 0{
+            for (var j: u32 = 0; j < node.count; j+=1u){
+                let tri_num = tri_idx[node.first + j];
+                let mesh_index = get_mesh(tri_num);
 
-        if (ray_aabb(ray, node.aabb_min, node.aabb_max, closest_hit.dst)){
-            stats[0] += 1;
-            if node.count > 0{
-                stats[1] += 1;
-                for (var j: u32 = 0; j < node.count; j+=1u){
-                    let tri_num = tri_idx[node.first + j];
-                    let mesh_index = get_mesh(tri_num);
+                let index1 = indices[tri_num * 3u];
+                let index2 = indices[tri_num * 3u + 1u];
+                let index3 = indices[tri_num * 3u + 2u];
 
-                    let index1 = indices[tri_num * 3u];
-                    let index2 = indices[tri_num * 3u + 1u];
-                    let index3 = indices[tri_num * 3u + 2u];
-
-                    var v1 = vertices[index1];
-                    var v2 = vertices[index2];
-                    var v3 = vertices[index3];
-                    let hit = ray_triangle(ray, v1,v2,v3);
-                    if hit.hit && hit.dst < closest_hit.dst {
-                        closest_hit = hit;
-                        closest_hit.material = meshes[mesh_index].material;
-                    }
+                var v1 = vertices[index1];
+                var v2 = vertices[index2];
+                var v3 = vertices[index3];
+                let hit = ray_triangle(ray, v1,v2,v3);
+                stats[1] += 1; // Track triangle checks
+                if hit.hit && hit.dst < closest_hit.dst {
+                    closest_hit = hit;
+                    closest_hit.material = meshes[mesh_index].material;
                 }
             }
-            if node.count == 0 {
-                stack[stack_index] = node.left;
-                stack_index += 1;
-                stack[stack_index] = node.right;
-                stack_index += 1;
-            }
+        }else{ // Otherwise its root node, push children onto the stack
+            let left_node = nodes[node.left];
+            let right_node = nodes[node.right];
+            let left_dst = ray_aabb_dist(ray, left_node.aabb_min, left_node.aabb_max, closest_hit.dst);
+            let right_dst = ray_aabb_dist(ray, right_node.aabb_min, right_node.aabb_max, closest_hit.dst);
+            stats[0] += 2; // Track bounding box checks
+            // Use index math to simplify code here:
+            let left_is_closer = left_dst < right_dst;
+            let near_dst = select(right_dst, left_dst, left_is_closer);
+            let far_dst = select(right_dst, left_dst, !left_is_closer);
+            let near_idx = select(node.right, node.left, left_is_closer);
+            let far_idx = select(node.right, node.left, !left_is_closer);
+            // Push farthest child first, (last on first off, last child gets checked first)
+            if far_dst < closest_hit.dst{ stack[stack_index] = far_idx; stack_index += 1; }
+            if near_dst < closest_hit.dst{ stack[stack_index] = near_idx; stack_index += 1; }
         }
     }
     return closest_hit;
@@ -257,7 +263,7 @@ fn get_mesh(triangle_index: u32)-> i32{
     return mesh_index;
 }
 
-fn ray_aabb(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32)-> bool{
+fn ray_aabb_dist(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32)-> f32{
     let inv_dir_x = 1.0/ray.dir.x;
     let inv_dir_y = 1.0/ray.dir.y;
     let inv_dir_z = 1.0/ray.dir.z;
@@ -274,7 +280,12 @@ fn ray_aabb(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32)-> bool{
     let tz2 = (b_max.z - ray.origin.z) * inv_dir_z;
     tmin = max(tmin, min(tz1, tz2));
     tmax = min(tmax, max(tz1, tz2));
-    return tmax >= tmin && tmin < t && tmax > 0;
+    let did_hit = tmax >= tmin && tmin < t && tmax > 0;
+    if did_hit {
+        return tmin;
+    }else{
+        return 0x1.fffffep+127f;
+    }
 }
 
 fn calculate_ray_collions(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit{
@@ -354,6 +365,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32>{
             if (hit.material.smoothness < 0.0){
                 var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
                 var refractive_index = -hit.material.smoothness;
+                // TODO, select(if false, if true, condition) i think this is backwards?
                 refractive_index = select(refractive_index, 1.0/refractive_index, front_face);
 
                 let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
