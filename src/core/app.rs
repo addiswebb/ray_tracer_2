@@ -16,7 +16,8 @@ use winit::{
 };
 
 use crate::core::{
-    egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
+    bvh::BVH, egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene,
+    texture::Texture,
 };
 
 #[repr(C)]
@@ -29,6 +30,8 @@ pub struct Params {
     skybox: i32,
     frames: i32,
     accumulate: i32,
+    debug_flag: i32,
+    depth_threshhold: i32,
 }
 #[allow(unused)]
 pub struct AppState {
@@ -109,6 +112,8 @@ impl AppState {
             skybox: 1,
             frames: 0,
             accumulate: 1,
+            debug_flag: 0,
+            depth_threshhold: 10,
         };
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Param buffer"),
@@ -447,6 +452,15 @@ impl App {
                     ui.label(format!("Frame: {}", params.frames));
                     ui.label(format!("FPS: {:.0}", 1.0 / (1.0 * state.dt.as_secs_f64())));
                     ui.label(format!("Avg Frame Time: {:#?}", state.average_frame_time));
+                    ui.separator();
+                    ui.heading("BVH");
+                    ui.label(format!("Nodes: {}", state.scene.bvh.n_nodes));
+                    ui.label(format!("Triangles: {}", state.scene.bvh.triangles.len()));
+                    ui.label(format!(
+                        "Triangle Indices: {}",
+                        state.scene.bvh.triangle_indices.len()
+                    ));
+                    ui.separator();
                     ui.horizontal(|ui| {
                         ui.label("Resolution");
                         ui.add(
@@ -460,6 +474,53 @@ impl App {
                                 .range(1..=1080),
                         );
                     });
+                    ui.horizontal(|ui| {
+                        ui.label("Debug Mode:");
+                        ui.add(
+                            egui::DragValue::new(&mut params.debug_flag)
+                                .speed(1)
+                                .range(0..=5),
+                        );
+                    });
+                    ui.add(
+                        egui::Slider::new(&mut params.depth_threshhold, 1..=1000)
+                            .text("Depth Threshold"),
+                    );
+                    let mut max_nodes = state.scene.bvh.max_nodes;
+                    // let mut max_triangles = state.scene.bvh.max_triangles;
+                    let mut min_triangles_per_node = state.scene.bvh.min_triangles_per_node;
+                    ui.horizontal(|ui| {
+                        ui.label("Max Nodes");
+                        ui.add(
+                            egui::DragValue::new(&mut max_nodes)
+                                .speed(1)
+                                .range(1..=15000),
+                        );
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Min Triangle Per Node");
+                        ui.add(
+                            egui::DragValue::new(&mut min_triangles_per_node)
+                                .speed(1)
+                                .range(1..=15000),
+                        );
+                    });
+                    if ui.button("Rebuild BVH").clicked() {
+                        let (vertices, indices) = state.scene.vertices_and_indices();
+                        state.scene.bvh = BVH::build(
+                            &state.scene.meshes(),
+                            vertices,
+                            indices,
+                            max_nodes,
+                            state.scene.bvh.max_triangles,
+                            min_triangles_per_node,
+                        );
+                        state.params.frames = -1;
+                        state.average_frame_time = Duration::ZERO;
+                    }
+                    state.scene.bvh.max_nodes = max_nodes;
+                    state.scene.bvh.min_triangles_per_node = min_triangles_per_node;
                 });
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {

@@ -5,6 +5,9 @@ struct Params{
     rays_per_pixel: i32,
     skybox: i32,
     frames: i32,
+    accumulate: i32,
+    debug_flag: i32,
+    debug_scale: i32,
 };
 struct Material{
     color: vec4<f32>,
@@ -195,59 +198,47 @@ fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit{
     return hit;
 }
 
-fn ray_BVH(ray: Ray) -> Hit{
+fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit{
     var closest_hit: Hit;
    closest_hit.hit = false;
    closest_hit.dst = 1e30;
-
    var stack: array<u32,64>;
-   var top: u32 = 0;
-   stack[top] = 0;
-   top += 1;
-   loop {
-        if top == 0 { break; }
-        top -= 1;
-        let node = nodes[stack[top]];
+   var stack_index: u32 = 0;
+   stack[stack_index] = 0;
+   stack_index += 1;
 
-        if (!ray_aabb(ray, node.aabb_min, node.aabb_max, closest_hit.dst)){
-            continue;
-        }
-        if node.count > 0{
-            for (var j: u32 = 0; j < node.count; j+=1u){
-                let tri_num = tri_idx[node.first + j];
-                let mesh_index = get_mesh(tri_num);
+   while(stack_index > 0){
+        stack_index -= 1;
+        let node = nodes[stack[stack_index]];
 
-                let index1 = indices[tri_num * 3u];
-                let index2 = indices[tri_num * 3u + 1u];
-                let index3 = indices[tri_num * 3u + 2u];
+        if (ray_aabb(ray, node.aabb_min, node.aabb_max, closest_hit.dst)){
+            stats[0] += 1;
+            if node.count > 0{
+                stats[1] += 1;
+                for (var j: u32 = 0; j < node.count; j+=1u){
+                    let tri_num = tri_idx[node.first + j];
+                    let mesh_index = get_mesh(tri_num);
 
-                var v1 = vertices[index1];
-                var v2 = vertices[index2];
-                var v3 = vertices[index3];
-                let hit = ray_triangle(ray, v1,v2,v3);
-                if hit.hit && hit.dst < closest_hit.dst {
-                    closest_hit = hit;
-                    if mesh_index == -1 {
-                        var mat: Material;
-                        mat.color = vec4<f32>(1.0,0.0,1.0,1.0);
-                        mat.emission_color = vec4<f32>(1.0,1.0,1.0,1.0);
-                        mat.specular_color = vec4<f32>(1.0,0.0,1.0,1.0);
-                        mat.emission_strength = 0.0;
-                        mat.specular = 0.1;
-                        mat.smoothness = 0.1;
-                        closest_hit.material = mat;
-                    }else{
+                    let index1 = indices[tri_num * 3u];
+                    let index2 = indices[tri_num * 3u + 1u];
+                    let index3 = indices[tri_num * 3u + 2u];
+
+                    var v1 = vertices[index1];
+                    var v2 = vertices[index2];
+                    var v3 = vertices[index3];
+                    let hit = ray_triangle(ray, v1,v2,v3);
+                    if hit.hit && hit.dst < closest_hit.dst {
+                        closest_hit = hit;
                         closest_hit.material = meshes[mesh_index].material;
                     }
                 }
             }
-        }
-
-        if node.count == 0 {
-            stack[top] = node.left;
-            top += 1;
-            stack[top] = node.right;
-            top += 1;
+            if node.count == 0 {
+                stack[stack_index] = node.left;
+                stack_index += 1;
+                stack[stack_index] = node.right;
+                stack_index += 1;
+            }
         }
     }
     return closest_hit;
@@ -286,7 +277,7 @@ fn ray_aabb(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32)-> bool{
     return tmax >= tmin && tmin < t && tmax > 0;
 }
 
-fn calculate_ray_collions(ray: Ray) -> Hit{
+fn calculate_ray_collions(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit{
     var closest_hit: Hit;
     closest_hit.dst = 0x1.fffffep+127f;
     for(var i: u32 = 0u; i < scene.spheres; i+=1u){
@@ -297,7 +288,7 @@ fn calculate_ray_collions(ray: Ray) -> Hit{
         }
     }
     if scene.n_nodes > 0{
-        let hit:Hit = ray_BVH(ray);
+        let hit:Hit = ray_BVH(ray, stats);
         if hit.hit && hit.dst < closest_hit.dst{
             closest_hit = hit;
         }
@@ -352,8 +343,9 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32>{
     var ray: Ray = incident_ray;
     var ray_color = vec4<f32>(1.0);
     var incoming_light = vec4<f32>(0.0);
+    var _stats = vec2<i32>(0,0);
     for (var i = 0; i <= params.number_of_bounces; i +=1){
-        var hit = calculate_ray_collions(ray);
+        var hit = calculate_ray_collions(ray, &_stats);
         if (hit.hit){
             let is_specular_bounce = hit.material.specular >= rand(seed);
             ray.origin = hit.hit_point;
@@ -399,6 +391,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32>{
             break;
         }
     }
+
     return incoming_light;
 }
 
@@ -427,7 +420,9 @@ fn get_environment_light(ray: Ray) -> vec4<f32>{
 fn frag(i: FragInput) -> vec4<f32>{
     let pixel_coord = i.pos * i.size;
     var rng_state = u32(pixel_coord.y * i.size.x + pixel_coord.x)+u32(abs(params.frames)) * 719393u;
-
+    if params.debug_flag != 0{
+        return debug_trace(i);
+    }
     var total_incoming_light = vec4<f32>(0.0);
     for (var j = 0; j <= params.rays_per_pixel; j+=1){
         let anti_aliasing = vec2<f32>(rand(&rng_state),rand(&rng_state));
@@ -444,4 +439,47 @@ fn frag(i: FragInput) -> vec4<f32>{
     }
     let color = total_incoming_light / f32(params.rays_per_pixel);
     return color;
+}
+
+fn debug_trace(i: FragInput) -> vec4<f32>{
+    var stats = vec2<i32>(0,0);
+    var ray: Ray;
+    let pos = i.pos / i.size;
+    ray.origin = scene.camera.origin ;
+    ray.dir = scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin;
+    let hit: Hit = calculate_ray_collions(ray, &stats);
+    switch params.debug_flag{
+        case 1: {
+            let d = f32(stats[0]) / f32(params.debug_scale);
+            if d > 1.0{
+                return vec4<f32>(1.0,0.0,0.0,1.0);
+            }
+            return vec4<f32>(d,d,d, 1.0);
+        }
+        case 2:{
+            let t = f32(stats[1]) / f32(params.debug_scale);
+            if t > 1.0{
+                return vec4<f32>(1.0,0.0,0.0,1.0);
+            }
+            return vec4<f32>(t,t,t, 1.0);
+        }
+        case 3:{
+            let d = distance(ray.origin, hit.hit_point)/f32(params.debug_scale);
+            return vec4<f32>(d,d,d,1.0);
+        }
+        case 4:{
+            if !hit.hit {return vec4<f32>(0.0);}
+            let n = hit.normal * 0.5 + 0.5;
+            return vec4<f32>(n.x, n.y, n.z, 1.0);
+        }
+        case 5:{
+            let d = f32(stats[0]) / f32(params.debug_scale);
+            let t = f32(stats[1]) / f32(params.debug_scale);
+            return vec4<f32>(t,0.0,d, 1.0);
+        }
+        default: {
+            return vec4<f32>(1.0,0.0,1.0,1.0);
+        }
+    }
+
 }

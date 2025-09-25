@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use glam::Vec3;
 
 use crate::core::mesh::{MeshUniform, Vertex};
@@ -31,6 +33,9 @@ pub struct BVH {
     pub nodes: Vec<Node>,
     pub triangle_indices: Vec<u32>,
     pub n_nodes: u32,
+    pub max_nodes: u64,
+    pub max_triangles: u64,
+    pub min_triangles_per_node: usize,
 }
 
 impl BVH {
@@ -40,9 +45,20 @@ impl BVH {
             nodes: vec![],
             triangle_indices: vec![],
             n_nodes: 0,
+            max_nodes: 15000,
+            max_triangles: 15000,
+            min_triangles_per_node: 2,
         }
     }
-    pub fn build(meshes: &Vec<MeshUniform>, vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+    pub fn build(
+        meshes: &Vec<MeshUniform>,
+        vertices: Vec<Vertex>,
+        indices: Vec<u32>,
+        max_nodes: u64,
+        max_triangles: u64,
+        min_triangles_per_node: usize,
+    ) -> Self {
+        let start_time = Instant::now();
         let number_of_triangles = indices.len() / 3;
         let mut triangles = Vec::with_capacity(number_of_triangles);
         if number_of_triangles == 0 {
@@ -51,10 +67,14 @@ impl BVH {
                 nodes: vec![],
                 triangle_indices: vec![],
                 n_nodes: 0,
+                max_nodes,
+                max_triangles,
+                min_triangles_per_node,
             };
         }
-        let mut nodes = Vec::with_capacity(number_of_triangles);
-        for _ in 0..number_of_triangles {
+        let mut nodes = Vec::with_capacity(max_nodes as usize);
+        println!("Max nodes: {max_nodes}");
+        for _ in 0..max_nodes {
             nodes.push(Node::default())
         }
         for mesh in meshes {
@@ -93,9 +113,13 @@ impl BVH {
                 .map(|i| i as u32)
                 .collect::<Vec<u32>>(),
             n_nodes: 1,
+            max_nodes,
+            max_triangles,
+            min_triangles_per_node,
         };
         bvh.update_node_bounds(0);
         bvh.subdivide(0);
+        println!("Generated BVH in {:?}", Instant::now() - start_time);
         bvh
     }
     pub fn update_node_bounds(&mut self, i: usize) {
@@ -119,9 +143,9 @@ impl BVH {
     pub fn subdivide(&mut self, node_idx: usize) {
         let parent_first = self.nodes[node_idx].first as usize;
         let parent_count = self.nodes[node_idx].count as usize;
-        if parent_count <= 4 {
+        if self.n_nodes as u64 >= self.max_nodes || parent_count < self.min_triangles_per_node {
             return;
-        };
+        }
         let aabb_max = self.nodes[node_idx].aabb_max;
         let aabb_min = self.nodes[node_idx].aabb_min;
         let extent = Vec3::from_array(aabb_max) - Vec3::from_array(aabb_min);

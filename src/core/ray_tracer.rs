@@ -4,7 +4,7 @@ use egui_wgpu::wgpu::{self, PipelineCompilationOptions};
 
 use crate::core::{
     app::Params,
-    bvh::Node,
+    bvh::{BVH, Node},
     mesh::{MeshUniform, Sphere, Vertex},
     scene::{Scene, SceneUniform},
     texture::Texture,
@@ -141,7 +141,7 @@ impl RayTracer {
             mapped_at_creation: false,
         });
 
-        let max_vertices = 3000;
+        let max_vertices = 30000;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Vertex Buffer"),
             size: (max_vertices * std::mem::size_of::<Vertex>() as wgpu::BufferAddress),
@@ -151,7 +151,7 @@ impl RayTracer {
             mapped_at_creation: false,
         });
 
-        let max_indices = 3000;
+        let max_indices = 30000;
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Index Buffer"),
             size: (max_indices * std::mem::size_of::<u32>() as wgpu::BufferAddress),
@@ -179,19 +179,17 @@ impl RayTracer {
                 | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
-        let max_nodes = 1000;
         let bvh_nodes_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Nodes Buffer"),
-            size: (max_nodes * std::mem::size_of::<Node>() as wgpu::BufferAddress),
+            size: (15000 * std::mem::size_of::<Node>() as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::UNIFORM
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
-        let max_triangle_indices = 1000;
         let triangle_indices_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Triangle Indices Buffer"),
-            size: (max_triangle_indices * std::mem::size_of::<u32>() as wgpu::BufferAddress),
+            size: (15000 * std::mem::size_of::<u32>() as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::UNIFORM
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::STORAGE,

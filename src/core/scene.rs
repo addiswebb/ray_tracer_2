@@ -60,7 +60,7 @@ impl Scene {
     pub fn bvh(&mut self, meshes: &Vec<MeshUniform>) -> &Vec<Node> {
         if self.bvh.n_nodes == 0 && self.meshes.len() > 0 {
             let (vertices, indices) = self.vertices_and_indices();
-            self.bvh = BVH::build(meshes, vertices, indices);
+            self.bvh = BVH::build(meshes, vertices, indices, 15000, 15000, 2);
         }
         &self.bvh.nodes
     }
@@ -127,13 +127,13 @@ impl Scene {
             focus_dist: 1.0,
         });
 
-        scene.add_sphere(Sphere::new(
-            Vec3::new(-4.0, 1.0, 0.0),
-            1.0,
-            Material::new().color([1.0, 0.0, 0.0, 1.0]),
-        ));
+        // scene.add_sphere(Sphere::new(
+        //     Vec3::new(-4.0, 1.0, 0.0),
+        //     1.0,
+        //     Material::new().color([1.0, 0.0, 0.0, 1.0]),
+        // ));
 
-        scene.load_mesh(Path::new("Suzanne.obj")).await;
+        scene.load_mesh(Path::new("dragon.obj")).await;
 
         scene
     }
