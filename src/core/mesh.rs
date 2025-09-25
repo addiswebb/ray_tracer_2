@@ -84,6 +84,10 @@ impl Material {
         self.specular = specular;
         *self
     }
+    pub fn smooth(&mut self, smoothness: f32) -> Self {
+        self.smoothness = smoothness;
+        *self
+    }
 }
 
 #[allow(unused)]

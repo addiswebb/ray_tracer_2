@@ -5,10 +5,11 @@ use std::{
 
 use egui::ahash::AHashMap;
 use egui_wgpu::wgpu;
-use glam::{Vec3, Vec4};
+use glam::Vec3;
 use rand::Rng;
 
 use crate::core::{
+    bvh::{BVH, Node},
     camera::{CameraDescriptor, CameraUniform},
     mesh::{Material, Mesh, MeshUniform, Sphere, Vertex},
 };
@@ -19,6 +20,7 @@ pub struct Scene {
     pub camera: Camera,
     pub spheres: Vec<Sphere>,
     pub meshes: Vec<Mesh>,
+    pub bvh: BVH,
 }
 
 #[repr(C)]
@@ -29,6 +31,8 @@ pub struct SceneUniform {
     indices: u32,
     meshes: u32,
     camera: CameraUniform,
+    nodes: u32,
+    padding: [f32; 3],
 }
 
 #[allow(dead_code)]
@@ -50,7 +54,15 @@ impl Scene {
             camera,
             spheres: vec![],
             meshes: vec![],
+            bvh: BVH::empty(),
         }
+    }
+    pub fn bvh(&mut self, meshes: &Vec<MeshUniform>) -> &Vec<Node> {
+        if self.bvh.n_nodes == 0 && self.meshes.len() > 0 {
+            let (vertices, indices) = self.vertices_and_indices();
+            self.bvh = BVH::build(meshes, vertices, indices);
+        }
+        &self.bvh.nodes
     }
     pub fn set_camera(&mut self, camera_descriptor: &CameraDescriptor) {
         self.camera = Camera::new(camera_descriptor);
@@ -104,7 +116,7 @@ impl Scene {
         let mut scene = Scene::new(config);
 
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(0.0, 0.0, 0.0),
+            origin: Vec3::new(5.0, 0.0, 0.0),
             look_at: Vec3::new(1.0, 0.0, 0.0),
             view_up: Vec3::new(0.0, 1.0, 0.0),
             fov: 45.0,
@@ -116,9 +128,9 @@ impl Scene {
         });
 
         scene.add_sphere(Sphere::new(
-            Vec3::new(4.0, 1.0, 0.0),
-            0.2,
-            Material::new().emissive([1.0, 1.0, 1.0, 1.0], 2.0),
+            Vec3::new(-4.0, 1.0, 0.0),
+            1.0,
+            Material::new().color([1.0, 0.0, 0.0, 1.0]),
         ));
 
         scene.load_mesh(Path::new("Suzanne.obj")).await;
@@ -224,10 +236,10 @@ impl Scene {
             size: Vec3::ONE,
             material: Material::new().color([1.0, 0.0, 0.0, 1.0]),
             vertices: vec![
-                Vertex::new(Vec3::new(-1.0, 0.0, -1.0), Vec3::Y),
-                Vertex::new(Vec3::new(1.0, 0.0, -1.0), Vec3::Y),
-                Vertex::new(Vec3::new(1.0, 0.0, 1.0), Vec3::Y),
-                Vertex::new(Vec3::new(-1.0, 0.0, 1.0), Vec3::Y),
+                Vertex::new(Vec3::new(-2.0, 0.0, -2.0), Vec3::Y),
+                Vertex::new(Vec3::new(2.0, 0.0, -2.0), Vec3::Y),
+                Vertex::new(Vec3::new(2.0, 0.0, 2.0), Vec3::Y),
+                Vertex::new(Vec3::new(-2.0, 0.0, 2.0), Vec3::Y),
             ],
             indices: vec![2, 1, 0, 3, 2, 0],
         });
@@ -237,75 +249,86 @@ impl Scene {
             size: Vec3::ONE,
             material: Material::new().color([0.0, 0.3, 0.3, 1.0]),
             vertices: vec![
-                Vertex::new(Vec3::new(-1.0, 2.0, -1.0), -Vec3::Y),
-                Vertex::new(Vec3::new(1.0, 2.0, -1.0), -Vec3::Y),
-                Vertex::new(Vec3::new(1.0, 2.0, 1.0), -Vec3::Y),
-                Vertex::new(Vec3::new(-1.0, 2.0, 1.0), -Vec3::Y),
+                Vertex::new(Vec3::new(-2.0, 4.0, -2.0), -Vec3::Y),
+                Vertex::new(Vec3::new(2.0, 4.0, -2.0), -Vec3::Y),
+                Vertex::new(Vec3::new(2.0, 4.0, 2.0), -Vec3::Y),
+                Vertex::new(Vec3::new(-2.0, 4.0, 2.0), -Vec3::Y),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
         });
 
         scene.add_mesh(Mesh {
             position: Vec3::ZERO,
-            size: Vec3::ONE,
+            size: Vec3::ONE * 2.0,
             // material: Material::new().color([1.0, 1.0, 0.0, 1.0]),
-            material: Material::new().specular([1.0, 1.0, 1.0, 1.0], 0.8),
+            material: Material::new()
+                .specular([1.0, 1.0, 1.0, 1.0], 1.0)
+                .smooth(1.0),
             vertices: vec![
-                Vertex::new(Vec3::new(-1.0, 0.0, -1.0), Vec3::X),
-                Vertex::new(Vec3::new(-1.0, 2.0, -1.0), Vec3::X),
-                Vertex::new(Vec3::new(-1.0, 2.0, 1.0), Vec3::X),
-                Vertex::new(Vec3::new(-1.0, 0.0, 1.0), Vec3::X),
+                Vertex::new(Vec3::new(-2.0, 0.0, -2.0), Vec3::X),
+                Vertex::new(Vec3::new(-2.0, 4.0, -2.0), Vec3::X),
+                Vertex::new(Vec3::new(-2.0, 4.0, 2.0), Vec3::X),
+                Vertex::new(Vec3::new(-2.0, 0.0, 2.0), Vec3::X),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
         });
 
         scene.add_mesh(Mesh {
             position: Vec3::ZERO,
-            size: Vec3::ONE,
+            size: Vec3::ONE * 2.0,
             // material: Material::new().color([0.0, 1.0, 0.0, 1.0]),
-            material: Material::new().specular([1.0, 1.0, 1.0, 1.0], 0.8),
+            material: Material::new()
+                .specular([1.0, 1.0, 1.0, 1.0], 0.99)
+                .smooth(0.99),
             vertices: vec![
-                Vertex::new(Vec3::new(1.0, 0.0, -1.0), -Vec3::X),
-                Vertex::new(Vec3::new(1.0, 0.0, 1.0), -Vec3::X),
-                Vertex::new(Vec3::new(1.0, 2.0, 1.0), -Vec3::X),
-                Vertex::new(Vec3::new(1.0, 2.0, -1.0), -Vec3::X),
+                Vertex::new(Vec3::new(2.0, 0.0, -2.0), -Vec3::X),
+                Vertex::new(Vec3::new(2.0, 0.0, 2.0), -Vec3::X),
+                Vertex::new(Vec3::new(2.0, 4.0, 2.0), -Vec3::X),
+                Vertex::new(Vec3::new(2.0, 4.0, -2.0), -Vec3::X),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
         });
 
         scene.add_mesh(Mesh {
             position: Vec3::ZERO,
-            size: Vec3::ONE,
-            material: Material::new().color([0.0, 0.5, 1.0, 1.0]),
+            size: Vec3::ONE * 2.0,
+            material: Material::new()
+                .color([0.0, 0.5, 1.0, 1.0])
+                .specular([1.0, 1.0, 1.0, 1.0], 1.0)
+                .smooth(1.0),
             vertices: vec![
-                Vertex::new(Vec3::new(-1.0, 0.0, -1.0), -Vec3::Z),
-                Vertex::new(Vec3::new(1.0, 0.0, -1.0), -Vec3::Z),
-                Vertex::new(Vec3::new(1.0, 2.0, -1.0), -Vec3::Z),
-                Vertex::new(Vec3::new(-1.0, 2.0, -1.0), -Vec3::Z),
+                Vertex::new(Vec3::new(-2.0, 0.0, -2.0), Vec3::Z),
+                Vertex::new(Vec3::new(2.0, 0.0, -2.0), Vec3::Z),
+                Vertex::new(Vec3::new(2.0, 4.0, -2.0), Vec3::Z),
+                Vertex::new(Vec3::new(-2.0, 4.0, -2.0), Vec3::Z),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
         });
+        // Back wall (blue)
         scene.add_mesh(Mesh {
             position: Vec3::ZERO,
-            size: Vec3::ONE,
-            material: Material::new().color([0.0, 0.0, 1.0, 1.0]),
+            size: Vec3::ONE * 2.0,
+            material: Material::new()
+                .color([0.2, 0.2, 0.82, 1.0])
+                .specular([1.0, 1.0, 1.0, 1.0], 0.99)
+                .smooth(0.99),
             vertices: vec![
-                Vertex::new(Vec3::new(-1.0, 0.0, 1.0), -Vec3::Z),
-                Vertex::new(Vec3::new(1.0, 0.0, 1.0), -Vec3::Z),
-                Vertex::new(Vec3::new(1.0, 2.0, 1.0), -Vec3::Z),
-                Vertex::new(Vec3::new(-1.0, 2.0, 1.0), -Vec3::Z),
+                Vertex::new(Vec3::new(-2.0, 0.0, 2.0), -Vec3::Z),
+                Vertex::new(Vec3::new(2.0, 0.0, 2.0), -Vec3::Z),
+                Vertex::new(Vec3::new(2.0, 4.0, 2.0), -Vec3::Z),
+                Vertex::new(Vec3::new(-2.0, 4.0, 2.0), -Vec3::Z),
             ],
             indices: vec![2, 1, 0, 3, 2, 0],
         });
         scene.add_mesh(Mesh {
             position: Vec3::ZERO,
             size: Vec3::ONE,
-            material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 0.4),
+            material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 3.0),
             vertices: vec![
-                Vertex::new(Vec3::new(-0.4, 1.98, -0.4), -Vec3::Y),
-                Vertex::new(Vec3::new(0.4, 1.98, -0.4), -Vec3::Y),
-                Vertex::new(Vec3::new(0.4, 1.98, 0.4), -Vec3::Y),
-                Vertex::new(Vec3::new(-0.4, 1.98, 0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(-0.4, 3.98, -0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(0.4, 3.98, -0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(0.4, 3.98, 0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(-0.4, 3.98, 0.4), -Vec3::Y),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
         });
@@ -423,18 +446,6 @@ impl Scene {
             ),
         ]);
 
-        scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
-            material: Material::new()
-                .color([0.0, 0.6, 0.0, 1.0])
-                .specular([1.0, 1.0, 1.0, 1.0], 0.5),
-            vertices: vec![Vertex::new(
-                Vec3::new(0.0, 0.0, 1.0),
-                Vec3::new(2.0, -3.0, -1.0),
-            )],
-            indices: vec![1u32],
-        });
         scene
     }
 
@@ -451,6 +462,8 @@ impl Scene {
             indices: indices_len,
             meshes: self.meshes.len() as u32,
             camera: self.camera.to_uniform(),
+            nodes: self.bvh.n_nodes,
+            padding: [69., 0., 0.],
         }
     }
 }
@@ -519,7 +532,7 @@ pub async fn load_model_obj(path: &Path) -> Vec<Mesh> {
         meshes.push(Mesh {
             position: Vec3::ZERO,
             size: Vec3::ONE,
-            material: Material::new().color([1.0, 0.0, 0.0, 1.0]),
+            material: Material::new().color([0.0, 0.0, 1.0, 1.0]),
             vertices,
             indices,
         });

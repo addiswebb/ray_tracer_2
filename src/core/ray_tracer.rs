@@ -4,6 +4,7 @@ use egui_wgpu::wgpu::{self, PipelineCompilationOptions};
 
 use crate::core::{
     app::Params,
+    bvh::Node,
     mesh::{MeshUniform, Sphere, Vertex},
     scene::{Scene, SceneUniform},
     texture::Texture,
@@ -19,6 +20,8 @@ pub struct RayTracer {
     pub index_buffer: wgpu::Buffer,
     pub mesh_buffer: wgpu::Buffer,
     pub scene_buffer: wgpu::Buffer,
+    pub bvh_nodes_buffer: wgpu::Buffer,
+    pub triangle_indices_buffer: wgpu::Buffer,
 }
 
 impl RayTracer {
@@ -107,6 +110,28 @@ impl RayTracer {
                         },
                         count: None,
                     },
+                    // Nodes
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // Triangle Indices
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 8,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
         let scene_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -154,6 +179,24 @@ impl RayTracer {
                 | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
+        let max_nodes = 1000;
+        let bvh_nodes_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("RayTracer Nodes Buffer"),
+            size: (max_nodes * std::mem::size_of::<Node>() as wgpu::BufferAddress),
+            usage: wgpu::BufferUsages::UNIFORM
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let max_triangle_indices = 1000;
+        let triangle_indices_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("RayTracer Triangle Indices Buffer"),
+            size: (max_triangle_indices * std::mem::size_of::<u32>() as wgpu::BufferAddress),
+            usage: wgpu::BufferUsages::UNIFORM
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("RayTracer Bind Group"),
             layout: &bind_group_layout,
@@ -186,6 +229,14 @@ impl RayTracer {
                     binding: 6,
                     resource: mesh_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: bvh_nodes_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: triangle_indices_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -212,14 +263,26 @@ impl RayTracer {
             sphere_buffer,
             mesh_buffer,
             scene_buffer,
+            bvh_nodes_buffer,
+            triangle_indices_buffer,
         }
     }
-    pub fn update_buffers(&mut self, queue: &wgpu::Queue, scene: &Scene) {
+    pub fn update_buffers(&mut self, queue: &wgpu::Queue, scene: &mut Scene) {
         let (vertices, indices) = scene.vertices_and_indices();
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&indices));
         queue.write_buffer(&self.sphere_buffer, 0, bytemuck::cast_slice(&scene.spheres));
         queue.write_buffer(&self.mesh_buffer, 0, bytemuck::cast_slice(&scene.meshes()));
+        queue.write_buffer(
+            &self.bvh_nodes_buffer,
+            0,
+            bytemuck::cast_slice(&scene.bvh(&scene.meshes())),
+        );
+        queue.write_buffer(
+            &self.triangle_indices_buffer,
+            0,
+            bytemuck::cast_slice(&scene.bvh.triangle_indices),
+        );
         queue.write_buffer(
             &self.scene_buffer,
             0,
@@ -240,6 +303,4 @@ impl RayTracer {
         compute_pass.set_bind_group(0, &self.bind_group, &[]);
         compute_pass.dispatch_workgroups(xgroups, ygroups, 1);
     }
-
-    
 }

@@ -39,7 +39,20 @@ struct Scene{
     indices: u32,
     meshes: u32,
     camera: Camera,
+    n_nodes: u32,
 }
+
+struct BVHNode {
+    aabb_min: vec3<f32>,
+    pad0: f32,
+    aabb_max: vec3<f32>,
+    pad1: f32,
+    left: u32,
+    right: u32,
+    first: u32,
+    count: u32,
+};
+
 
 struct Camera{
     origin: vec3<f32>,
@@ -86,6 +99,10 @@ var<storage,read> vertices: array<Vertex>;
 var<storage,read> indices: array<u32>;
 @group(0) @binding(6)
 var<storage,read> meshes: array<Mesh>;
+@group(0) @binding(7)
+var<storage,read> nodes: array<BVHNode>;
+@group(0) @binding(8)
+var<storage,read> tri_idx: array<u32>;
 
 const epsilon: f32 = 1e-5;
 
@@ -178,39 +195,113 @@ fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit{
     return hit;
 }
 
+fn ray_BVH(ray: Ray) -> Hit{
+    var closest_hit: Hit;
+   closest_hit.hit = false;
+   closest_hit.dst = 1e30;
+
+   var stack: array<u32,64>;
+   var top: u32 = 0;
+   stack[top] = 0;
+   top += 1;
+
+   loop {
+        if top == 0 { break; }
+        top -= 1;
+        let node_idx = stack[top];
+        let node = nodes[node_idx];
+
+        if (!ray_aabb(ray, node.aabb_min, node.aabb_max, closest_hit.dst)){
+            continue;
+        }
+        if node.count > 0{
+            for (var j: u32 = 0; j < node.count; j+=1u){
+                let tri_num = tri_idx[node.first + j];
+                let mesh_index = get_mesh(tri_num);
+
+                let index1 = indices[tri_num * 3u];
+                let index2 = indices[tri_num * 3u + 1u];
+                let index3 = indices[tri_num * 3u + 2u];
+
+                var v1 = vertices[index1];
+                var v2 = vertices[index2];
+                var v3 = vertices[index3];
+                let hit = ray_triangle(ray, v1,v2,v3);
+                if hit.hit && hit.dst < closest_hit.dst {
+                    closest_hit = hit;
+                    if mesh_index == -1 {
+                        var mat: Material;
+                        mat.color = vec4<f32>(1.0,0.0,1.0,1.0);
+                        mat.emission_color = vec4<f32>(1.0,1.0,1.0,1.0);
+                        mat.specular_color = vec4<f32>(1.0,0.0,1.0,1.0);
+                        mat.emission_strength = 0.0;
+                        mat.specular = 0.1;
+                        mat.smoothness = 0.1;
+                        closest_hit.material = mat;
+                    }else{
+                        closest_hit.material = meshes[mesh_index].material;
+                    }
+                }
+            }
+        }
+
+        if node.count == 0 {
+            stack[top] = node.left;
+            top += 1;
+            stack[top] = node.right;
+            top += 1;
+        }
+    }
+    return closest_hit;
+}
+
+fn get_mesh(triangle_index: u32)-> i32{
+    var mesh_index = -1;
+    for (var m: u32 = 0; m < scene.meshes; m+=1){
+        let mesh: Mesh = meshes[m];
+        // if triangle_index >= mesh.first && triangle_index < mesh.first+mesh.triangles{
+        let first_tri_index = mesh.first / 3u;
+        if triangle_index >= first_tri_index && triangle_index < first_tri_index + mesh.triangles {
+            mesh_index = i32(m);
+            break;
+        }
+    }
+    return mesh_index;
+}
+
+fn ray_aabb(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32)-> bool{
+    let inv_dir_x = 1.0/ray.dir.x;
+    let inv_dir_y = 1.0/ray.dir.y;
+    let inv_dir_z = 1.0/ray.dir.z;
+
+    let tx1 = (b_min.x - ray.origin.x) * inv_dir_x;
+    let tx2 = (b_max.x - ray.origin.x) * inv_dir_x;
+    var tmin = min(tx1,tx2);
+    var tmax = max(tx1,tx2);
+    let ty1 = (b_min.y - ray.origin.y) * inv_dir_y;
+    let ty2 = (b_max.y - ray.origin.y) * inv_dir_y;
+    tmin = max(tmin, min(ty1, ty2));
+    tmax = min(tmax, max(ty1, ty2));
+    let tz1 = (b_min.z - ray.origin.z) * inv_dir_z;
+    let tz2 = (b_max.z - ray.origin.z) * inv_dir_z;
+    tmin = max(tmin, min(tz1, tz2));
+    tmax = min(tmax, max(tz1, tz2));
+    return tmax >= tmin && tmin < t && tmax > 0;
+}
+
 fn calculate_ray_collions(ray: Ray) -> Hit{
     var closest_hit: Hit;
     closest_hit.dst = 0x1.fffffep+127f;
     for(var i: u32 = 0u; i < scene.spheres; i+=1u){
-        var hit: Hit = ray_sphere(ray, spheres[i].position, spheres[i].radius);
+        let hit: Hit = ray_sphere(ray, spheres[i].position, spheres[i].radius);
         if hit.hit && hit.dst < closest_hit.dst{
             closest_hit = hit;
             closest_hit.material = spheres[i].material;
         }
     }
-    for(var mesh_index: u32 = 0u; mesh_index< scene.meshes; mesh_index+=1u){
-        for(var i: u32 = 0u; i < meshes[mesh_index].triangles; i+=1u){
-            let first = meshes[mesh_index].first;
-            let offset = meshes[mesh_index].offset;
-
-            let index1 = indices[first + i*3u];
-            let index2 = indices[first + i*3u+1u];
-            let index3 = indices[first + i*3u+2u];
-
-            var v1 = vertices[offset + index1];
-            var v2 = vertices[offset + index2];
-            var v3 = vertices[offset + index3];
-
-            v1.pos += meshes[mesh_index].pos;
-            v2.pos += meshes[mesh_index].pos;
-            v3.pos += meshes[mesh_index].pos;
-
-            var hit: Hit = ray_triangle(ray, v1,v2,v3);
-            if hit.hit && hit.dst < closest_hit.dst{
-                closest_hit = hit;
-                closest_hit.material = meshes[mesh_index].material;
-            }
-        }
+    let hit:Hit = ray_BVH(ray);
+    if hit.hit && hit.dst < closest_hit.dst{
+        closest_hit = hit;
     }
 
     return closest_hit;

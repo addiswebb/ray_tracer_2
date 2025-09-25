@@ -121,7 +121,7 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::balls(&surface_config);
+        let scene = Scene::room(&surface_config);
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
@@ -186,7 +186,7 @@ impl App {
         let initial_height = 600;
 
         let _ = window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
-        window.set_maximized(true);
+        // window.set_maximized(true);
 
         let surface = self
             .instance
@@ -233,13 +233,13 @@ impl App {
                     state.scene = Scene::balls(&state.surface_config);
                 }
                 1 => {
-                    state.scene = Scene::random_balls(&state.surface_config);
-                }
-                2 => {
                     state.scene = Scene::room(&state.surface_config);
                 }
-                3 => {
+                2 => {
                     state.scene = Scene::metal(&state.surface_config);
+                }
+                3 => {
+                    state.scene = Scene::random_balls(&state.surface_config);
                 }
                 _ => (),
             }
@@ -251,7 +251,9 @@ impl App {
             0,
             bytemuck::cast_slice(&[state.params]),
         );
-        state.ray_tracer.update_buffers(&state.queue, &state.scene);
+        state
+            .ray_tracer
+            .update_buffers(&state.queue, &mut state.scene);
     }
 
     fn handle_input(&mut self, event: &WindowEvent) -> bool {
