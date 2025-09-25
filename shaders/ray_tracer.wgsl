@@ -78,6 +78,7 @@ struct FragInput{
 struct Ray{
     origin: vec3<f32>,
     dir: vec3<f32>,
+    inv_dir: vec3<f32>,
 }
 
 struct Hit{
@@ -264,20 +265,16 @@ fn get_mesh(triangle_index: u32)-> i32{
 }
 
 fn ray_aabb_dist(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32)-> f32{
-    let inv_dir_x = 1.0/ray.dir.x;
-    let inv_dir_y = 1.0/ray.dir.y;
-    let inv_dir_z = 1.0/ray.dir.z;
-
-    let tx1 = (b_min.x - ray.origin.x) * inv_dir_x;
-    let tx2 = (b_max.x - ray.origin.x) * inv_dir_x;
+    let tx1 = (b_min.x - ray.origin.x) * ray.inv_dir.x;
+    let tx2 = (b_max.x - ray.origin.x) * ray.inv_dir.x;
     var tmin = min(tx1,tx2);
     var tmax = max(tx1,tx2);
-    let ty1 = (b_min.y - ray.origin.y) * inv_dir_y;
-    let ty2 = (b_max.y - ray.origin.y) * inv_dir_y;
+    let ty1 = (b_min.y - ray.origin.y) * ray.inv_dir.y;
+    let ty2 = (b_max.y - ray.origin.y) * ray.inv_dir.y;
     tmin = max(tmin, min(ty1, ty2));
     tmax = min(tmax, max(ty1, ty2));
-    let tz1 = (b_min.z - ray.origin.z) * inv_dir_z;
-    let tz2 = (b_max.z - ray.origin.z) * inv_dir_z;
+    let tz1 = (b_min.z - ray.origin.z) * ray.inv_dir.z;
+    let tz2 = (b_max.z - ray.origin.z) * ray.inv_dir.z;
     tmin = max(tmin, min(tz1, tz2));
     tmax = min(tmax, max(tz1, tz2));
     let did_hit = tmax >= tmin && tmin < t && tmax > 0;
@@ -446,6 +443,7 @@ fn frag(i: FragInput) -> vec4<f32>{
         var ray: Ray;
         ray.origin = scene.camera.origin + offset;
         ray.dir = scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin;
+        ray.inv_dir = 1.0 / ray.dir;
 
         total_incoming_light += trace(ray, &rng_state);
     }
@@ -459,6 +457,7 @@ fn debug_trace(i: FragInput) -> vec4<f32>{
     let pos = i.pos / i.size;
     ray.origin = scene.camera.origin ;
     ray.dir = scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin;
+    ray.inv_dir = 1.0 / ray.dir;
     let hit: Hit = calculate_ray_collions(ray, &stats);
     switch params.debug_flag{
         case 1: {
