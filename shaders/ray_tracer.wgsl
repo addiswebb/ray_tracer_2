@@ -208,8 +208,7 @@ fn ray_BVH(ray: Ray) -> Hit{
    loop {
         if top == 0 { break; }
         top -= 1;
-        let node_idx = stack[top];
-        let node = nodes[node_idx];
+        let node = nodes[stack[top]];
 
         if (!ray_aabb(ray, node.aabb_min, node.aabb_max, closest_hit.dst)){
             continue;
@@ -259,7 +258,6 @@ fn get_mesh(triangle_index: u32)-> i32{
     var mesh_index = -1;
     for (var m: u32 = 0; m < scene.meshes; m+=1){
         let mesh: Mesh = meshes[m];
-        // if triangle_index >= mesh.first && triangle_index < mesh.first+mesh.triangles{
         let first_tri_index = mesh.first / 3u;
         if triangle_index >= first_tri_index && triangle_index < first_tri_index + mesh.triangles {
             mesh_index = i32(m);
