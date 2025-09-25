@@ -127,6 +127,7 @@ impl Renderer {
         ));
         response.clicked()
     }
+    #[allow(unused)]
     pub fn update_bind_group(
         &self,
         device: &wgpu::Device,

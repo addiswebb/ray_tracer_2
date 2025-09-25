@@ -532,7 +532,7 @@ pub async fn load_model_obj(path: &Path) -> Vec<Mesh> {
         meshes.push(Mesh {
             position: Vec3::ZERO,
             size: Vec3::ONE,
-            material: Material::new().color([0.0, 0.0, 1.0, 1.0]),
+            material: Material::new().color([0.2, 0.2, 0.8, 1.0]),
             vertices,
             indices,
         });

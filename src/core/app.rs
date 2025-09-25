@@ -30,6 +30,7 @@ pub struct Params {
     frames: i32,
     accumulate: i32,
 }
+#[allow(unused)]
 pub struct AppState {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -48,6 +49,7 @@ pub struct AppState {
     pub renderer: Renderer,
     pub use_mouse: bool,
     pub dt: Duration,
+    pub average_frame_time: Duration,
 }
 
 impl AppState {
@@ -106,7 +108,7 @@ impl AppState {
             rays_per_pixel: 3,
             skybox: 1,
             frames: 0,
-            accumulate: 0,
+            accumulate: 1,
         };
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Param buffer"),
@@ -121,7 +123,7 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::room(&surface_config);
+        let scene = Scene::obj_test(&surface_config).await;
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
@@ -153,6 +155,7 @@ impl AppState {
             renderer,
             use_mouse: false,
             dt: Duration::ZERO,
+            average_frame_time: Duration::ZERO,
         }
     }
 
@@ -216,15 +219,19 @@ impl App {
     pub fn update(&mut self, dt: Duration) {
         let state = self.state.as_mut().unwrap();
         state.dt = dt;
+        state.average_frame_time += dt;
+        state.average_frame_time /= 2;
         state.scene.camera.update_camera(dt);
         if state.scene.camera.controller.is_moving() {
             state.params.frames = -1;
+            state.average_frame_time = Duration::ZERO;
         }
         if state.params.accumulate != 0 {
             state.params.frames += 1;
         } else {
             // Reset Accumulation
             state.params.frames = -1;
+            state.average_frame_time = Duration::ZERO;
         }
         if state.selected_scene != state.prev_scene {
             log::info!("Changing Scene: {}", state.selected_scene);
@@ -425,8 +432,9 @@ impl App {
                     ui.heading("Entities");
                     ui.label(format!("Meshes: {:#?}", state.scene.meshes.len()));
                     ui.label(format!("Spheres: {:#?}", state.scene.spheres.len()));
-                    if ui.button("Delete shpere").clicked() {
-                        state.scene.spheres.pop();
+                    if ui.button("Nodes").clicked() {
+                        // state.scene.spheres.pop();
+                        println!("{:?}", state.scene.bvh.n_nodes);
                     }
                 });
 
@@ -438,6 +446,7 @@ impl App {
                     ui.separator();
                     ui.label(format!("Frame: {}", params.frames));
                     ui.label(format!("FPS: {:.0}", 1.0 / (1.0 * state.dt.as_secs_f64())));
+                    ui.label(format!("Avg Frame Time: {:#?}", state.average_frame_time));
                     ui.horizontal(|ui| {
                         ui.label("Resolution");
                         ui.add(
@@ -468,10 +477,12 @@ impl App {
             if params != state.params {
                 state.params = params;
                 state.params.frames = -1;
+                state.average_frame_time = Duration::ZERO;
             }
             if camera != state.scene.camera {
                 state.scene.camera = camera;
                 state.params.frames = -1;
+                state.average_frame_time = Duration::ZERO;
             }
 
             state.params.skybox = skybox as i32;
@@ -515,12 +526,14 @@ impl ApplicationHandler for App {
                         .controller
                         .process_mouse(delta.0, delta.1);
                     state.params.frames = -1;
+                    state.average_frame_time = Duration::ZERO;
                 }
             }
             DeviceEvent::MouseWheel { delta } => {
                 if state.use_mouse {
                     state.scene.camera.controller.process_scroll(&delta);
                     state.params.frames = -1;
+                    state.average_frame_time = Duration::ZERO;
                 }
             }
             _ => {}

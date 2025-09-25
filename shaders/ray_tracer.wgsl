@@ -204,7 +204,6 @@ fn ray_BVH(ray: Ray) -> Hit{
    var top: u32 = 0;
    stack[top] = 0;
    top += 1;
-
    loop {
         if top == 0 { break; }
         top -= 1;
@@ -297,9 +296,11 @@ fn calculate_ray_collions(ray: Ray) -> Hit{
             closest_hit.material = spheres[i].material;
         }
     }
-    let hit:Hit = ray_BVH(ray);
-    if hit.hit && hit.dst < closest_hit.dst{
-        closest_hit = hit;
+    if scene.n_nodes > 0{
+        let hit:Hit = ray_BVH(ray);
+        if hit.hit && hit.dst < closest_hit.dst{
+            closest_hit = hit;
+        }
     }
 
     return closest_hit;
