@@ -76,8 +76,8 @@ impl Scene {
     pub fn add_mesh(&mut self, mesh: Mesh) {
         self.meshes.push(mesh);
     }
-    pub async fn load_mesh(&mut self, path: &Path) {
-        self.meshes.extend(load_model_obj(path).await);
+    pub async fn load_mesh(&mut self, path: &Path, pos: Vec3) {
+        self.meshes.extend(load_model_obj(path, pos).await);
     }
 
     pub fn vertices_and_indices(&self) -> (Vec<Vertex>, Vec<u32>) {
@@ -127,14 +127,33 @@ impl Scene {
             focus_dist: 1.0,
         });
 
-        // scene.add_sphere(Sphere::new(
-        //     Vec3::new(-4.0, 1.0, 0.0),
-        //     1.0,
-        //     Material::new().color([1.0, 0.0, 0.0, 1.0]),
-        // ));
+        // scene
+        //     .load_mesh(Path::new("dragon.obj"), Vec3::new(2.0, 0.1, 1.0))
+        //     .await;
+        scene.add_sphere(Sphere::new(
+            Vec3::new(2.0, 0.5, 0.0),
+            0.5,
+            Material::new().color([1.0, 0.0, 0.0, 1.0]), // .emissive([1.0, 0.0, 0.0, 1.0], 0.9),
+        ));
 
-        scene.load_mesh(Path::new("dragon_large.obj")).await;
+        scene.add_sphere(Sphere::new(
+            Vec3::new(0.0, -10.0, 0.0),
+            10.0,
+            Material::new().color([1.0, 0.0, 0.0, 1.0]),
+        ));
 
+        scene.add_mesh(Mesh {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            size: Vec3::ONE,
+            material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 5.0),
+            vertices: vec![
+                Vertex::new(Vec3::new(-0.4, 1.98, -0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(0.4, 1.98, -0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(0.4, 1.98, 0.4), -Vec3::Y),
+                Vertex::new(Vec3::new(-0.4, 1.98, 0.4), -Vec3::Y),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
         scene
     }
     pub fn random_balls(config: &wgpu::SurfaceConfiguration) -> Self {
@@ -491,7 +510,7 @@ pub async fn load_binary(path: &Path) -> anyhow::Result<Vec<u8>> {
     Ok(std::fs::read(path)?)
 }
 
-pub async fn load_model_obj(path: &Path) -> Vec<Mesh> {
+pub async fn load_model_obj(path: &Path, pos: Vec3) -> Vec<Mesh> {
     let mut meshes: Vec<Mesh> = vec![];
     let path = std::path::Path::new(FILE).join("assets").join(path);
 
@@ -514,9 +533,9 @@ pub async fn load_model_obj(path: &Path) -> Vec<Mesh> {
         for (i, _) in (0..m.mesh.positions.len() / 3).enumerate() {
             vertices.push(Vertex::new(
                 Vec3::new(
-                    m.mesh.positions[i * 3],
-                    m.mesh.positions[i * 3 + 1],
-                    m.mesh.positions[i * 3 + 2],
+                    m.mesh.positions[i * 3] + pos.x,
+                    m.mesh.positions[i * 3 + 1] + pos.y,
+                    m.mesh.positions[i * 3 + 2] + pos.z,
                 ),
                 Vec3::new(
                     m.mesh.normals[i * 3],
@@ -532,7 +551,12 @@ pub async fn load_model_obj(path: &Path) -> Vec<Mesh> {
         meshes.push(Mesh {
             position: Vec3::ZERO,
             size: Vec3::ONE,
-            material: Material::new().color([0.2, 0.2, 0.8, 1.0]).glass(1.5),
+            material: Material::new()
+                .color([0.2, 0.2, 0.8, 1.0])
+                .emissive([1.0, 0.0, 0.0, 1.0], 0.9),
+            // .glass(1.3)
+            // .smooth(0.9)
+            // .emissive([0.2, 0.2, 0.8, 1.0], 1.0),
             vertices,
             indices,
         });

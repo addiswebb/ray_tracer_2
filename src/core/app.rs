@@ -104,11 +104,11 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         let params = Params {
-            width: 1920,
-            height: 1080,
-            number_of_bounces: 1,
+            width: 800,
+            height: 600,
+            number_of_bounces: 3,
             rays_per_pixel: 1,
-            skybox: 1,
+            skybox: 0,
             frames: 0,
             accumulate: 1,
             debug_flag: 0,
