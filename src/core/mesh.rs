@@ -99,6 +99,7 @@ pub struct Mesh {
     pub material: Material,
 }
 
+#[allow(unused)]
 impl Mesh {
     pub fn material(&mut self, material: Material) -> &Self {
         self.material = material;

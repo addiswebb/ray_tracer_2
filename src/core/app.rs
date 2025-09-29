@@ -127,7 +127,7 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::obj_test(&surface_config).await;
+        let scene = Scene::lighting_test(&surface_config).await;
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 

@@ -27,6 +27,39 @@ pub struct Node {
     pub count: u32,
 }
 
+impl Node {
+    pub fn cost(&self) -> f32 {
+        let e = Vec3::from_array(self.aabb_max) - Vec3::from_array(self.aabb_min);
+        let surface_area = e.x * e.y + e.y * e.z + e.x * e.z;
+        surface_area * self.count as f32
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Aabb {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl Aabb {
+    pub fn grow(&mut self, p: [f32; 3]) {
+        self.min = Vec3::from_array(BVH::fminf(self.min.to_array(), p));
+        self.max = Vec3::from_array(BVH::fmaxf(self.max.to_array(), p));
+    }
+    pub fn area(&self) -> f32 {
+        let e = self.max - self.min;
+        e.x * e.y + e.y * e.z + e.x * e.z
+    }
+}
+impl Default for Aabb {
+    fn default() -> Self {
+        Self {
+            min: Vec3::INFINITY,
+            max: Vec3::NEG_INFINITY,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct BVH {
     pub triangles: Vec<Triangle>,
@@ -38,6 +71,8 @@ pub struct BVH {
 impl BVH {
     pub const MAX_NODES: u32 = 200000;
     pub const MAX_DEPTH: u64 = 32;
+    pub const USE_SURFACE_AREA_HEURISTIC: bool = true;
+    pub const TEST_SPLITS: u32 = 100;
     pub fn empty() -> Self {
         Self {
             triangles: vec![],
@@ -82,8 +117,6 @@ impl BVH {
                 })
             }
         }
-        // let root = nodes.get_mut(0).unwrap();
-        // root.count = number_of_triangles as u32;
         nodes[0].count = number_of_triangles as u32;
 
         let mut bvh = Self {
@@ -117,27 +150,63 @@ impl BVH {
         node.aabb_max = (Vec3::from_array(node.aabb_max)).to_array();
         node.aabb_min = (Vec3::from_array(node.aabb_min)).to_array();
     }
-
+    pub fn find_best_split(&self, node: &Node, axis: &mut usize, split_pos: &mut f32) -> f32 {
+        let mut best_cost = f32::INFINITY;
+        for a in 0..3 {
+            let bounds_min = node.aabb_min[a];
+            let bounds_max = node.aabb_max[a];
+            if bounds_max == bounds_min {
+                continue;
+            }
+            let scale = (bounds_max - bounds_min) / 100.0;
+            for i in 0..BVH::TEST_SPLITS {
+                let test_split_pos = bounds_min + i as f32 * scale;
+                let cost = self.evaluate_sah(node, a as i32, test_split_pos, best_cost);
+                if cost < best_cost {
+                    *split_pos = test_split_pos;
+                    *axis = a;
+                    best_cost = cost;
+                }
+            }
+        }
+        best_cost
+    }
+    pub fn evaluate_sah(&self, node: &Node, axis: i32, pos: f32, best_cost: f32) -> f32 {
+        let mut left_bounds = Aabb::default();
+        let mut right_bounds = Aabb::default();
+        let mut left_count = 0.0;
+        let mut right_count = 0.0;
+        for i in 0..node.count as usize {
+            let triangle = &self.triangles[self.triangle_indices[node.left as usize + i] as usize];
+            if triangle.centroid[axis as usize] < pos {
+                left_count += 1.0;
+                left_bounds.grow(triangle.vertex_0);
+                left_bounds.grow(triangle.vertex_1);
+                left_bounds.grow(triangle.vertex_2);
+            } else {
+                right_count += 1.0;
+                right_bounds.grow(triangle.vertex_0);
+                right_bounds.grow(triangle.vertex_1);
+                right_bounds.grow(triangle.vertex_2);
+            }
+        }
+        let cost = left_count * left_bounds.area() + right_count * right_bounds.area();
+        if cost < best_cost {
+            println!("l: {left_count} r: {right_count}");
+        }
+        return if cost > 0.0 { cost } else { f32::INFINITY };
+    }
     pub fn subdivide(&mut self, node_idx: usize, depth: u64, stats: &mut BVHStats) {
         let parent_first = self.nodes[node_idx].first as usize;
         let parent_count = self.nodes[node_idx].count as usize;
+        let mut axis: usize = 0;
+        let mut split_pos = 0.0;
 
-        if depth >= BVH::MAX_DEPTH || parent_count < 2 {
+        let best_cost = self.find_best_split(&self.nodes[node_idx], &mut axis, &mut split_pos);
+        if best_cost >= 2.0 * self.nodes[node_idx].cost() {
             stats.record_leaf_node(parent_count as u32, depth as u32);
             return;
         }
-        let aabb_max = self.nodes[node_idx].aabb_max;
-        let aabb_min = self.nodes[node_idx].aabb_min;
-        let extent = Vec3::from_array(aabb_max) - Vec3::from_array(aabb_min);
-
-        let mut axis = 0;
-        if extent.y > extent.x {
-            axis = 1
-        }
-        if extent.z > extent[axis] {
-            axis = 2
-        }
-        let split_pos = aabb_min[axis] + extent[axis] * 0.5;
 
         let mut i = parent_first;
         let mut j = parent_first + parent_count - 1;
@@ -163,8 +232,6 @@ impl BVH {
         let right_index = self.n_nodes + 1;
         self.n_nodes += 2;
 
-        // TODO: resize nodes vector if needed
-
         {
             // Left child
             let left = &mut self.nodes[left_index as usize];
@@ -185,8 +252,8 @@ impl BVH {
             stats.record_node();
         }
         self.update_node_bounds(left_index as usize);
-        self.update_node_bounds(right_index as usize);
         self.subdivide(left_index as usize, depth + 1, stats);
+        self.update_node_bounds(right_index as usize);
         self.subdivide(right_index as usize, depth + 1, stats);
     }
 

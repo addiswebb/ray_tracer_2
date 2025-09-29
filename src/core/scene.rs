@@ -199,49 +199,50 @@ impl Scene {
                 .emissive([0.2, 0.2, 0.8, 1.0], 0.6),
         ));
 
-        scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
-            material: Material::new().color([0.2, 0.8, 0.2, 1.0]),
-            vertices: vec![
-                Vertex::new(Vec3::new(-2.0, -1.0, -2.0), Vec3::Y),
-                Vertex::new(Vec3::new(2.0, -1.0, -2.0), Vec3::Y),
-                Vertex::new(Vec3::new(2.0, -1.0, 2.0), Vec3::Y),
-                Vertex::new(Vec3::new(-2.0, -1.0, 2.0), Vec3::Y),
-            ],
-            indices: vec![2, 1, 0, 3, 2, 0],
-        });
-        scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
-            material: Material::new().color([0.9, 0.2, 0.2, 1.0]),
-            vertices: vec![
-                Vertex::new(Vec3::new(-2.0, -1.1, -2.0), -Vec3::Y),
-                Vertex::new(Vec3::new(2.0, -1.1, -2.0), -Vec3::Y),
-                Vertex::new(Vec3::new(2.0, -1.1, 2.0), -Vec3::Y),
-                Vertex::new(Vec3::new(-2.0, -1.1, 2.0), -Vec3::Y),
-            ],
-            indices: vec![0, 1, 2, 0, 2, 3],
-        });
+        // scene.add_mesh(Mesh {
+        //     position: Vec3::ZERO,
+        //     size: Vec3::ONE,
+        //     material: Material::new().color([0.2, 0.8, 0.2, 1.0]),
+        //     vertices: vec![
+        //         Vertex::new(Vec3::new(-2.0, -1.0, -2.0), Vec3::Y),
+        //         Vertex::new(Vec3::new(2.0, -1.0, -2.0), Vec3::Y),
+        //         Vertex::new(Vec3::new(2.0, -1.0, 2.0), Vec3::Y),
+        //         Vertex::new(Vec3::new(-2.0, -1.0, 2.0), Vec3::Y),
+        //     ],
+        //     indices: vec![2, 1, 0, 3, 2, 0],
+        // });
+        // scene.add_mesh(Mesh {
+        //     position: Vec3::ZERO,
+        //     size: Vec3::ONE,
+        //     material: Material::new().color([0.9, 0.2, 0.2, 1.0]),
+        //     vertices: vec![
+        //         Vertex::new(Vec3::new(-2.0, -1.1, -2.0), -Vec3::Y),
+        //         Vertex::new(Vec3::new(2.0, -1.1, -2.0), -Vec3::Y),
+        //         Vertex::new(Vec3::new(2.0, -1.1, 2.0), -Vec3::Y),
+        //         Vertex::new(Vec3::new(-2.0, -1.1, 2.0), -Vec3::Y),
+        //     ],
+        //     indices: vec![0, 1, 2, 0, 2, 3],
+        // });
 
-        scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
-            material: Material::new().color([0.2, 0.2, 0.8, 1.0]),
-            // .emissive([0.2, 0.2, 0.8, 1.0], 0.4),
-            vertices: vec![
-                Vertex::new(Vec3::new(-1.2, -1.7, -1.2), Vec3::Y),
-                Vertex::new(Vec3::new(1.2, -1.7, -1.2), Vec3::Y),
-                Vertex::new(Vec3::new(1.2, -1.7, 1.2), Vec3::Y),
-                Vertex::new(Vec3::new(-1.2, -1.7, 1.2), Vec3::Y),
-            ],
-            indices: vec![2, 1, 0, 3, 2, 0],
-        });
+        // scene.add_mesh(Mesh {
+        //     position: Vec3::ZERO,
+        //     size: Vec3::ONE,
+        //     material: Material::new().color([0.2, 0.2, 0.8, 1.0]),
+        //     // .emissive([0.2, 0.2, 0.8, 1.0], 0.4),
+        //     vertices: vec![
+        //         Vertex::new(Vec3::new(-1.2, -1.7, -1.2), Vec3::Y),
+        //         Vertex::new(Vec3::new(1.2, -1.7, -1.2), Vec3::Y),
+        //         Vertex::new(Vec3::new(1.2, -1.7, 1.2), Vec3::Y),
+        //         Vertex::new(Vec3::new(-1.2, -1.7, 1.2), Vec3::Y),
+        //     ],
+        //     indices: vec![2, 1, 0, 3, 2, 0],
+        // });
 
-        let mut mesh = load_model_obj(Path::new("sphere.obj"), Vec3::new(0.0, -2.7, 0.0)).await;
+        let mut mesh = load_model_obj(Path::new("dragon.obj"), Vec3::new(0.0, -1.7, 0.0)).await;
         let sphere = mesh.first_mut().unwrap();
-        sphere.material = Material::new().color([1.0, 1.0, 1.0, 1.0]);
-        // .emissive([0.2, 0.2, 0.8, 1.0], 0.6);
+        sphere.material = Material::new()
+            .color([1.0, 1.0, 1.0, 1.0])
+            .emissive([0.2, 0.2, 0.8, 1.0], 0.3);
 
         scene.meshes.extend(mesh);
 
