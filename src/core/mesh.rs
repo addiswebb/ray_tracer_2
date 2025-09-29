@@ -57,8 +57,8 @@ impl Material {
             emission_color: [1.0, 1.0, 1.0, 1.0],
             specular_color: [1.0, 1.0, 1.0, 1.0],
             emission_strength: 0.0,
-            smoothness: 0.2,
-            specular: 0.5,
+            smoothness: 0.0,
+            specular: 0.1,
             _padding: 0.0,
         }
     }
@@ -97,6 +97,13 @@ pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub material: Material,
+}
+
+impl Mesh {
+    pub fn material(&mut self, material: Material) -> &Self {
+        self.material = material;
+        self
+    }
 }
 
 #[repr(C)]

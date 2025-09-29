@@ -37,6 +37,7 @@ pub struct BVH {
 
 impl BVH {
     pub const MAX_NODES: u32 = 200000;
+    pub const MAX_DEPTH: u64 = 32;
     pub fn empty() -> Self {
         Self {
             triangles: vec![],
@@ -121,7 +122,7 @@ impl BVH {
         let parent_first = self.nodes[node_idx].first as usize;
         let parent_count = self.nodes[node_idx].count as usize;
 
-        if depth >= 32 || parent_count < 2 {
+        if depth >= BVH::MAX_DEPTH || parent_count < 2 {
             stats.record_leaf_node(parent_count as u32, depth as u32);
             return;
         }
