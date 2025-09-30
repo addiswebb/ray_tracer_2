@@ -9,7 +9,7 @@ use glam::Vec3;
 use rand::Rng;
 
 use crate::core::{
-    bvh::{BVH, Node},
+    bvh::{self, Node, BVH},
     camera::{CameraDescriptor, CameraUniform},
     mesh::{Material, Mesh, MeshUniform, Sphere, Vertex},
 };
@@ -60,7 +60,7 @@ impl Scene {
     pub fn bvh(&mut self, meshes: &Vec<MeshUniform>) -> &Vec<Node> {
         if self.bvh.n_nodes == 0 && self.meshes.len() > 0 {
             let (vertices, indices) = self.vertices_and_indices();
-            self.bvh = BVH::build(meshes, vertices, indices);
+            self.bvh = BVH::build(meshes, vertices, indices, bvh::Quality::High);
         }
         &self.bvh.nodes
     }
@@ -190,53 +190,6 @@ impl Scene {
             aperture: 0.0,
             focus_dist: 1.0,
         });
-
-        scene.add_sphere(Sphere::new(
-            Vec3::new(0.0, -0.2, 0.0),
-            0.4,
-            Material::new()
-                .color([1.0, 1.0, 1.0, 1.0])
-                .emissive([0.2, 0.2, 0.8, 1.0], 0.6),
-        ));
-
-        // scene.add_mesh(Mesh {
-        //     position: Vec3::ZERO,
-        //     size: Vec3::ONE,
-        //     material: Material::new().color([0.2, 0.8, 0.2, 1.0]),
-        //     vertices: vec![
-        //         Vertex::new(Vec3::new(-2.0, -1.0, -2.0), Vec3::Y),
-        //         Vertex::new(Vec3::new(2.0, -1.0, -2.0), Vec3::Y),
-        //         Vertex::new(Vec3::new(2.0, -1.0, 2.0), Vec3::Y),
-        //         Vertex::new(Vec3::new(-2.0, -1.0, 2.0), Vec3::Y),
-        //     ],
-        //     indices: vec![2, 1, 0, 3, 2, 0],
-        // });
-        // scene.add_mesh(Mesh {
-        //     position: Vec3::ZERO,
-        //     size: Vec3::ONE,
-        //     material: Material::new().color([0.9, 0.2, 0.2, 1.0]),
-        //     vertices: vec![
-        //         Vertex::new(Vec3::new(-2.0, -1.1, -2.0), -Vec3::Y),
-        //         Vertex::new(Vec3::new(2.0, -1.1, -2.0), -Vec3::Y),
-        //         Vertex::new(Vec3::new(2.0, -1.1, 2.0), -Vec3::Y),
-        //         Vertex::new(Vec3::new(-2.0, -1.1, 2.0), -Vec3::Y),
-        //     ],
-        //     indices: vec![0, 1, 2, 0, 2, 3],
-        // });
-
-        // scene.add_mesh(Mesh {
-        //     position: Vec3::ZERO,
-        //     size: Vec3::ONE,
-        //     material: Material::new().color([0.2, 0.2, 0.8, 1.0]),
-        //     // .emissive([0.2, 0.2, 0.8, 1.0], 0.4),
-        //     vertices: vec![
-        //         Vertex::new(Vec3::new(-1.2, -1.7, -1.2), Vec3::Y),
-        //         Vertex::new(Vec3::new(1.2, -1.7, -1.2), Vec3::Y),
-        //         Vertex::new(Vec3::new(1.2, -1.7, 1.2), Vec3::Y),
-        //         Vertex::new(Vec3::new(-1.2, -1.7, 1.2), Vec3::Y),
-        //     ],
-        //     indices: vec![2, 1, 0, 3, 2, 0],
-        // });
 
         let mut mesh = load_model_obj(Path::new("dragon.obj"), Vec3::new(0.0, -1.7, 0.0)).await;
         let sphere = mesh.first_mut().unwrap();

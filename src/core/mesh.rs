@@ -23,9 +23,9 @@ impl Vertex {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Sphere {
-    position: [f32; 3],
-    radius: f32,
-    material: Material,
+    pub position: [f32; 3],
+    pub radius: f32,
+    pub material: Material,
 }
 
 impl Sphere {
@@ -91,6 +91,7 @@ impl Material {
 }
 
 #[allow(unused)]
+#[derive(Debug)]
 pub struct Mesh {
     pub position: Vec3,
     pub size: Vec3,

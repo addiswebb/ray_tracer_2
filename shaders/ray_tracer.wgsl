@@ -56,7 +56,6 @@ struct BVHNode {
     count: u32,
 };
 
-
 struct Camera {
     origin: vec3<f32>,
     lower_left_corner: vec3<f32>,

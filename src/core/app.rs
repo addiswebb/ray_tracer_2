@@ -16,7 +16,12 @@ use winit::{
 };
 
 use crate::core::{
-    egui::EguiRenderer, ray_tracer::RayTracer, renderer::Renderer, scene::Scene, texture::Texture,
+    bvh::{self, BVH},
+    egui::EguiRenderer,
+    ray_tracer::RayTracer,
+    renderer::Renderer,
+    scene::Scene,
+    texture::Texture,
 };
 
 #[repr(C)]
@@ -52,6 +57,7 @@ pub struct AppState {
     pub use_mouse: bool,
     pub dt: Duration,
     pub average_frame_time: Duration,
+    pub selected_entity: i32,
 }
 
 impl AppState {
@@ -106,9 +112,9 @@ impl AppState {
         let params = Params {
             width: 1920,
             height: 1080,
-            number_of_bounces: 3,
+            number_of_bounces: 1,
             rays_per_pixel: 1,
-            skybox: 0,
+            skybox: 1,
             frames: 0,
             accumulate: 1,
             debug_flag: 0,
@@ -160,6 +166,7 @@ impl AppState {
             use_mouse: false,
             dt: Duration::ZERO,
             average_frame_time: Duration::ZERO,
+            selected_entity: -1,
         }
     }
 
@@ -193,7 +200,6 @@ impl App {
         let initial_height = 600;
 
         let _ = window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
-        // window.set_maximized(true);
 
         let surface = self
             .instance
@@ -432,14 +438,170 @@ impl App {
                         ui.label("Scene ID");
                         ui.add(egui::DragValue::new(&mut state.selected_scene).range(0..=3));
                     });
+                    if state.selected_entity != -1 {
+                        ui.separator();
+                        if state.selected_entity < state.scene.spheres.len() as i32 {
+                            let s = &mut state.scene.spheres[state.selected_entity as usize];
+                            ui.heading("Sphere");
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut s.position[0]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.position[1]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.position[2]).speed(0.01));
+                                ui.label(format!("Position"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut s.radius).speed(0.01));
+                                ui.label(format!("Radius"));
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut s.material.color[0]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.material.color[1]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.material.color[2]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.material.color[3]).speed(0.01));
+                                ui.label(format!("Color"));
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.emission_color[0])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.emission_color[1])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.emission_color[2])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.emission_color[3])
+                                        .speed(0.01),
+                                );
+                                ui.label(format!("Emissive Color"));
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.emission_strength)
+                                        .speed(0.01),
+                                );
+                                ui.label(format!("Emission Strength"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.specular_color[0])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.specular_color[1])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.specular_color[2])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.specular_color[3])
+                                        .speed(0.01),
+                                );
+                                ui.label(format!("Specular Color"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut s.material.specular).speed(0.01));
+                                ui.label(format!("Specular Probability"));
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut s.material.smoothness).speed(0.01),
+                                );
+                                ui.label(format!("Smoothness"));
+                            });
+                        } else {
+                            let m = &mut state.scene.meshes
+                                [state.selected_entity as usize - state.scene.spheres.len()];
+                            ui.heading("Mesh");
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut m.position[0]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.position[1]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.position[2]).speed(0.01));
+                                ui.label(format!("Position"));
+                            });
+                            // Add size?
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut m.material.color[0]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.material.color[1]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.material.color[2]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.material.color[3]).speed(0.01));
+                                ui.label(format!("Color"));
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.emission_color[0])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.emission_color[1])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.emission_color[2])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.emission_color[3])
+                                        .speed(0.01),
+                                );
+                                ui.label(format!("Emissive Color"));
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.emission_strength)
+                                        .speed(0.01),
+                                );
+                                ui.label(format!("Emission Strength"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.specular_color[0])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.specular_color[1])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.specular_color[2])
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.specular_color[3])
+                                        .speed(0.01),
+                                );
+                                ui.label(format!("Specular Color"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut m.material.specular).speed(0.01));
+                                ui.label(format!("Specular Probability"));
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut m.material.smoothness).speed(0.01),
+                                );
+                                ui.label(format!("Smoothness"));
+                            });
+                        }
+                    }
                     ui.separator();
                     ui.heading("Entities");
                     ui.label(format!("Meshes: {:#?}", state.scene.meshes.len()));
                     ui.label(format!("Spheres: {:#?}", state.scene.spheres.len()));
-                    if ui.button("Nodes").clicked() {
-                        // state.scene.spheres.pop();
-                        println!("{:?}", state.scene.bvh.n_nodes);
-                    }
                 });
 
             egui::SidePanel::left("Debug")
@@ -485,6 +647,31 @@ impl App {
                         egui::Slider::new(&mut params.depth_threshhold, 1..=1000)
                             .text("Depth Threshold"),
                     );
+                    ui.separator();
+                    ui.heading("Entity List");
+                    let nothing_selected = state.selected_entity == -1;
+                    for (i, _) in state.scene.spheres.iter().enumerate() {
+                        let selected = state.selected_entity == i as i32 && !nothing_selected;
+                        if ui.selectable_label(selected, "Sphere").clicked() {
+                            state.selected_entity = i as i32;
+                        }
+                    }
+
+                    for (i, _) in state.scene.meshes.iter().enumerate() {
+                        let selected = state.selected_entity - state.scene.spheres.len() as i32
+                            == i as i32
+                            && !nothing_selected;
+                        if ui.selectable_label(selected, "Mesh").clicked() {
+                            state.selected_entity = (state.scene.spheres.len() + i) as i32;
+                        }
+                    }
+                    ui.separator();
+
+                    if ui.button("Rebuild BVH").clicked() {
+                        let (vertices, indices) = state.scene.vertices_and_indices();
+                        state.scene.bvh =
+                            BVH::build(&state.scene.meshes(), vertices, indices, bvh::Quality::High)
+                    }
                 });
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {
