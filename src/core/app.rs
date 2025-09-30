@@ -133,7 +133,7 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::lighting_test(&surface_config).await;
+        let scene = Scene::obj_test(&surface_config).await;
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
@@ -667,11 +667,15 @@ impl App {
                     }
                     ui.separator();
 
-                    if ui.button("Rebuild BVH").clicked() {
-                        let (vertices, indices) = state.scene.vertices_and_indices();
-                        state.scene.bvh =
-                            BVH::build(&state.scene.meshes(), vertices, indices, bvh::Quality::High)
-                    }
+                    // if ui.button("Rebuild BVH").clicked() {
+                    //     let (vertices, indices) = state.scene.vertices_and_indices();
+                    //     state.scene.bvh = BVH::build(
+                    //         &state.scene.meshes(),
+                    //         vertices,
+                    //         indices,
+                    //         bvh::Quality::Disabled,
+                    //     )
+                    // }
                 });
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {

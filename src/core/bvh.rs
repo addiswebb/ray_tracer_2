@@ -81,8 +81,7 @@ pub enum Quality {
 impl BVH {
     pub const MAX_NODES: u32 = 200000;
     pub const MAX_DEPTH: u64 = 32;
-    pub const TEST_SPLITS: u32 = 200;
-    pub const USE_SAH: bool = true;
+    pub const TEST_SPLITS: u32 = 50;
     pub fn empty() -> Self {
         Self {
             triangles: vec![],
@@ -133,24 +132,13 @@ impl BVH {
                     max: v0.max(v1.max(v2)).to_array(),
                     min: v0.min(v1.min(v2)).to_array(),
                 };
-                if tri.min[0] < min[0] {
-                    min[0] = tri.min[0]
-                }
-                if tri.min[1] < min[1] {
-                    min[1] = tri.min[1]
-                }
-                if tri.min[2] < min[2] {
-                    min[2] = tri.min[2]
-                }
-                if tri.max[0] < max[0] {
-                    max[0] = tri.max[0]
-                }
-                if tri.max[1] < max[1] {
-                    max[1] = tri.max[1]
-                }
-                if tri.max[2] < max[2] {
-                    max[2] = tri.max[2]
-                }
+                min[0] = min[0].min(tri.min[0]);
+                min[1] = min[1].min(tri.min[1]);
+                min[2] = min[2].min(tri.min[2]);
+                max[0] = max[0].max(tri.max[0]);
+                max[1] = max[1].max(tri.max[1]);
+                max[2] = max[2].max(tri.max[2]);
+                triangles.push(tri);
             }
         }
         nodes[0] = Node {
@@ -185,23 +173,7 @@ impl BVH {
         stats.print();
         bvh
     }
-    pub fn update_node_bounds(&mut self, i: usize) {
-        let node = self.nodes.get_mut(i).unwrap();
-        node.aabb_min = [INFINITY, INFINITY, INFINITY];
-        node.aabb_max = [-INFINITY, -INFINITY, -INFINITY];
-        for i in 0..node.count as usize {
-            let tri_index = self.triangle_indices[node.first as usize + i] as usize;
-            let leaf_triangle = self.triangles[tri_index];
-            node.aabb_min = BVH::fminf(node.aabb_min, leaf_triangle.vertex_0);
-            node.aabb_min = BVH::fminf(node.aabb_min, leaf_triangle.vertex_1);
-            node.aabb_min = BVH::fminf(node.aabb_min, leaf_triangle.vertex_2);
-            node.aabb_max = BVH::fmaxf(node.aabb_max, leaf_triangle.vertex_0);
-            node.aabb_max = BVH::fmaxf(node.aabb_max, leaf_triangle.vertex_1);
-            node.aabb_max = BVH::fmaxf(node.aabb_max, leaf_triangle.vertex_2);
-        }
-        node.aabb_max = (Vec3::from_array(node.aabb_max)).to_array();
-        node.aabb_min = (Vec3::from_array(node.aabb_min)).to_array();
-    }
+
     pub fn find_best_split(&self, node: &Node, axis: &mut usize, split_pos: &mut f32) -> f32 {
         if node.count <= 1 {
             *axis = 0;
@@ -209,7 +181,7 @@ impl BVH {
             return f32::INFINITY;
         }
         let bounds = (Vec3::from_array(node.aabb_max) - Vec3::from_array(node.aabb_min)).to_array();
-        match self.quality {
+        return match self.quality {
             Quality::Low => {
                 *axis = if bounds[0] > bounds[1] && bounds[0] > bounds[2] {
                     0
@@ -217,29 +189,31 @@ impl BVH {
                     if bounds[1] > bounds[2] { 1 } else { 2 }
                 };
                 *split_pos = node.aabb_min[*axis] + bounds[*axis] * 0.5;
-                return self.evaluate_sah(node, axis.clone() as i32, split_pos.clone());
+                self.evaluate_sah(node, axis.clone() as i32, split_pos.clone())
             }
-            _ => {}
-        }
-        let mut best_cost = f32::INFINITY;
-        for a in 0..3 {
-            let bounds_min = node.aabb_min[a];
-            let bounds_max = node.aabb_max[a];
-            if bounds_max == bounds_min {
-                continue;
-            }
-            for i in 0..BVH::TEST_SPLITS {
-                let split_t = (i + 1) as f32 / (BVH::TEST_SPLITS as f32 + 1.0);
-                let test_split_pos = bounds_min + (bounds_max - bounds_min) * split_t;
-                let cost = self.evaluate_sah(node, a as i32, test_split_pos);
-                if cost < best_cost {
-                    *split_pos = test_split_pos;
-                    *axis = a;
-                    best_cost = cost;
+            Quality::High => {
+                let mut best_cost = f32::INFINITY;
+                for a in 0..3 {
+                    let bounds_min = node.aabb_min[a];
+                    let bounds_max = node.aabb_max[a];
+                    if bounds_max == bounds_min {
+                        continue;
+                    }
+                    for i in 0..BVH::TEST_SPLITS {
+                        let split_t = (i + 1) as f32 / (BVH::TEST_SPLITS as f32 + 1.0);
+                        let test_split_pos = bounds_min + (bounds_max - bounds_min) * split_t;
+                        let cost = self.evaluate_sah(node, a as i32, test_split_pos);
+                        if cost < best_cost {
+                            *split_pos = test_split_pos;
+                            *axis = a;
+                            best_cost = cost;
+                        }
+                    }
                 }
+                best_cost
             }
-        }
-        best_cost
+            Quality::Disabled => f32::INFINITY,
+        };
     }
     pub fn evaluate_sah(&self, node: &Node, axis: i32, pos: f32) -> f32 {
         let mut left_bounds = Aabb::default();
@@ -247,7 +221,7 @@ impl BVH {
         let mut left_count = 0.0;
         let mut right_count = 0.0;
         for i in 0..node.count as usize {
-            let triangle = &self.triangles[self.triangle_indices[node.left as usize + i] as usize];
+            let triangle = &self.triangles[self.triangle_indices[node.first as usize + i] as usize];
             if triangle.centroid[axis as usize] < pos {
                 left_count += 1.0;
                 left_bounds.grow(&triangle);
@@ -257,7 +231,7 @@ impl BVH {
             }
         }
         let cost = left_count * left_bounds.half_area() + right_count * right_bounds.half_area();
-        return if cost > 0.0 { cost } else { f32::INFINITY };
+        cost
     }
 
     pub fn subdivide(&mut self, node_idx: usize, depth: u64, stats: &mut BVHStats) {
@@ -276,50 +250,29 @@ impl BVH {
             let mut right_max: [f32; 3] = [f32::MIN; 3];
 
             let mut left_count = 0;
-            for i in parent_first as usize..(self.triangles.len() + parent_first as usize) {
-                let tri = &self.triangles[self.triangle_indices[i] as usize];
+            // for i in parent_first as usize..(self.triangles.len() + parent_count as usize) {
+            for i in 0..parent_count as usize {
+                let tri =
+                    &self.triangles[self.triangle_indices[parent_first as usize + i] as usize];
 
                 if tri.centroid[axis] < split_pos {
-                    if tri.min[0] < left_min[0] {
-                        left_min[0] = tri.min[0]
-                    }
-                    if tri.min[1] < left_min[1] {
-                        left_min[1] = tri.min[1]
-                    }
-                    if tri.min[2] < left_min[2] {
-                        left_min[2] = tri.min[2]
-                    }
-                    if tri.max[0] < left_max[0] {
-                        left_max[0] = tri.max[0]
-                    }
-                    if tri.max[1] < left_max[1] {
-                        left_max[1] = tri.max[1]
-                    }
-                    if tri.max[2] < left_max[2] {
-                        left_max[2] = tri.max[2]
-                    }
-
-                    self.triangle_indices.swap(left_count, i);
+                    left_min[0] = left_min[0].min(tri.min[0]);
+                    left_min[1] = left_min[1].min(tri.min[1]);
+                    left_min[2] = left_min[2].min(tri.min[2]);
+                    left_max[0] = left_max[0].max(tri.max[0]);
+                    left_max[1] = left_max[1].max(tri.max[1]);
+                    left_max[2] = left_max[2].max(tri.max[2]);
+                    let x = left_count + parent_first as usize;
+                    let y = i + parent_first as usize;
+                    self.triangle_indices.swap(x, y);
                     left_count += 1;
                 } else {
-                    if tri.min[0] < right_min[0] {
-                        right_min[0] = tri.min[0]
-                    }
-                    if tri.min[1] < right_min[1] {
-                        right_min[1] = tri.min[1]
-                    }
-                    if tri.min[2] < right_min[2] {
-                        right_min[2] = tri.min[2]
-                    }
-                    if tri.max[0] < right_max[0] {
-                        right_max[0] = tri.max[0]
-                    }
-                    if tri.max[1] < right_max[1] {
-                        right_max[1] = tri.max[1]
-                    }
-                    if tri.max[2] < right_max[2] {
-                        right_max[2] = tri.max[2]
-                    }
+                    right_min[0] = right_min[0].min(tri.min[0]);
+                    right_min[1] = right_min[1].min(tri.min[1]);
+                    right_min[2] = right_min[2].min(tri.min[2]);
+                    right_max[0] = right_max[0].max(tri.max[0]);
+                    right_max[1] = right_max[1].max(tri.max[1]);
+                    right_max[2] = right_max[2].max(tri.max[2]);
                 }
             }
             let right_count = parent_count - left_count as u32;

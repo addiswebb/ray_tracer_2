@@ -9,7 +9,7 @@ use glam::Vec3;
 use rand::Rng;
 
 use crate::core::{
-    bvh::{self, Node, BVH},
+    bvh::{self, BVH, Node},
     camera::{CameraDescriptor, CameraUniform},
     mesh::{Material, Mesh, MeshUniform, Sphere, Vertex},
 };
