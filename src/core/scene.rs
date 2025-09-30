@@ -5,13 +5,13 @@ use std::{
 
 use egui::ahash::AHashMap;
 use egui_wgpu::wgpu;
-use glam::Vec3;
+use glam::{Quat, Vec3, Vec4};
 use rand::Rng;
 
 use crate::core::{
     bvh::{self, BVH, Node},
     camera::{CameraDescriptor, CameraUniform},
-    mesh::{Material, Mesh, MeshUniform, Sphere, Vertex},
+    mesh::{Material, Mesh, MeshUniform, Sphere, Transform, Vertex},
 };
 
 use super::camera::Camera;
@@ -27,8 +27,8 @@ pub struct Scene {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct SceneUniform {
     spheres: u32,
-    vertices: u32,
-    indices: u32,
+    n_vertices: u32,
+    n_indices: u32,
     meshes: u32,
     camera: CameraUniform,
     nodes: u32,
@@ -76,8 +76,10 @@ impl Scene {
     pub fn add_mesh(&mut self, mesh: Mesh) {
         self.meshes.push(mesh);
     }
-    pub async fn load_mesh(&mut self, path: &Path, pos: Vec3) {
-        self.meshes.extend(load_model_obj(path, pos).await);
+
+    pub async fn load_mesh(&mut self, path: &Path, transform: Transform, material: Material) {
+        self.meshes
+            .extend(load_model_obj(path, transform, material).await);
     }
 
     pub fn vertices_and_indices(&self) -> (Vec<Vertex>, Vec<u32>) {
@@ -88,7 +90,16 @@ impl Scene {
 
         for mesh in &self.meshes {
             let vertex_offset = vertices.len() as u32;
-            vertices.extend_from_slice(&mesh.vertices);
+            for v in &mesh.vertices {
+                let p = mesh.transform.to_matrix()
+                    * Vec4::from_array([v.pos[0], v.pos[1], v.pos[2], 1.0]);
+                vertices.push(Vertex {
+                    pos: [p[0], p[1], p[2]],
+                    _padding1: 0.0,
+                    normal: v.normal,
+                    _padding2: 0.0,
+                });
+            }
             indices.extend(mesh.indices.iter().map(|i| i + vertex_offset));
         }
         (vertices, indices)
@@ -103,7 +114,7 @@ impl Scene {
                 triangles: (mesh.indices.len() / 3) as u32,
                 offset: 0,
                 _padding: 0.0,
-                pos: mesh.position.into(),
+                pos: [0.0, 0.0, 0.0],
                 _padding2: 0.0,
                 material: mesh.material,
             });
@@ -127,13 +138,23 @@ impl Scene {
             focus_dist: 1.0,
         });
 
-        let mut mesh = load_model_obj(Path::new("dragon.obj"), Vec3::new(2.8, 0.1, 1.0)).await;
+        let mut mesh = load_model_obj(
+            Path::new("dragon.obj"),
+            Transform::default(),
+            Material::new(),
+        )
+        .await;
         let dragon = mesh.first_mut().unwrap();
         dragon.material = Material::new().color([1.0, 0.0, 0.0, 1.0]);
 
         scene.meshes.extend(mesh);
 
-        let mut mesh = load_model_obj(Path::new("dragon.obj"), Vec3::new(3.2, 0.1, 1.0)).await;
+        let mut mesh = load_model_obj(
+            Path::new("dragon.obj"),
+            Transform::default(),
+            Material::new(),
+        )
+        .await;
         println!("LENGTH: {}", mesh.len());
         let dragon = mesh.first_mut().unwrap();
         dragon.material = Material::new()
@@ -142,8 +163,7 @@ impl Scene {
         scene.meshes.extend(mesh);
 
         scene.add_mesh(Mesh {
-            position: Vec3::new(3.4, 0.1, 1.0),
-            size: Vec3::ONE,
+            transform: Transform::default(),
             material: Material::new()
                 .color([1.0, 1.0, 0.0, 1.0])
                 .emissive([1.0, 0.0, 0.0, 1.0], 0.4),
@@ -191,7 +211,12 @@ impl Scene {
             focus_dist: 1.0,
         });
 
-        let mut mesh = load_model_obj(Path::new("dragon.obj"), Vec3::new(0.0, -1.7, 0.0)).await;
+        let mut mesh = load_model_obj(
+            Path::new("dragon.obj"),
+            Transform::default(),
+            Material::new(),
+        )
+        .await;
         let sphere = mesh.first_mut().unwrap();
         sphere.material = Material::new()
             .color([1.0, 1.0, 1.0, 1.0])
@@ -296,8 +321,7 @@ impl Scene {
 
         // Floor
         scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
+            transform: Transform::default(),
             material: Material::new().color([1.0, 0.0, 0.0, 1.0]),
             vertices: vec![
                 Vertex::new(Vec3::new(-2.0, 0.0, -2.0), Vec3::Y),
@@ -309,8 +333,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
+            transform: Transform::default(),
             material: Material::new().color([0.0, 0.3, 0.3, 1.0]),
             vertices: vec![
                 Vertex::new(Vec3::new(-2.0, 4.0, -2.0), -Vec3::Y),
@@ -322,9 +345,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE * 2.0,
-            // material: Material::new().color([1.0, 1.0, 0.0, 1.0]),
+            transform: Transform::default(),
             material: Material::new()
                 .specular([1.0, 1.0, 1.0, 1.0], 1.0)
                 .smooth(1.0),
@@ -338,9 +359,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE * 2.0,
-            // material: Material::new().color([0.0, 1.0, 0.0, 1.0]),
+            transform: Transform::default(),
             material: Material::new()
                 .specular([1.0, 1.0, 1.0, 1.0], 0.99)
                 .smooth(0.99),
@@ -354,8 +373,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE * 2.0,
+            transform: Transform::default(),
             material: Material::new()
                 .color([0.0, 0.5, 1.0, 1.0])
                 .specular([1.0, 1.0, 1.0, 1.0], 1.0)
@@ -370,8 +388,7 @@ impl Scene {
         });
         // Back wall (blue)
         scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE * 2.0,
+            transform: Transform::default(),
             material: Material::new()
                 .color([0.2, 0.2, 0.82, 1.0])
                 .specular([1.0, 1.0, 1.0, 1.0], 0.99)
@@ -385,8 +402,7 @@ impl Scene {
             indices: vec![2, 1, 0, 3, 2, 0],
         });
         scene.add_mesh(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
+            transform: Transform::default(),
             material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 3.0),
             vertices: vec![
                 Vertex::new(Vec3::new(-0.4, 3.98, -0.4), -Vec3::Y),
@@ -411,6 +427,144 @@ impl Scene {
                 .specular([1.0, 1.0, 1.0, 1.0], 0.2),
         ));
         // scene.meshes = vec![];
+        scene
+    }
+
+    pub async fn room_2(config: &wgpu::SurfaceConfiguration) -> Self {
+        let mut scene = Scene::new(config);
+        scene.set_camera(&CameraDescriptor {
+            origin: Vec3::new(0.0, 1.2, 9.0),
+            look_at: Vec3::new(0.0, 1.2, 8.0),
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 0.0,
+            focus_dist: 0.1,
+        });
+
+        let width = 3.0;
+        let depth = 2.0;
+        let height = 4.0;
+        // Large floor
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().color([0.4, 0.4, 0.64313, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-10.0, -0.01, -10.0), Vec3::Y),
+                Vertex::new(Vec3::new(10.0, -0.01, -10.0), Vec3::Y),
+                Vertex::new(Vec3::new(10.0, -0.01, 10.0), Vec3::Y),
+                Vertex::new(Vec3::new(-10.0, -0.01, 10.0), Vec3::Y),
+            ],
+            indices: vec![2, 1, 0, 3, 2, 0],
+        });
+        // Large Roof
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().color([0.898, 0.87, 0.815, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-10.0, 8.5, -10.0), -Vec3::Y),
+                Vertex::new(Vec3::new(10.0, 8.5, -10.0), -Vec3::Y),
+                Vertex::new(Vec3::new(10.0, 8.5, 10.0), -Vec3::Y),
+                Vertex::new(Vec3::new(-10.0, 8.5, 10.0), -Vec3::Y),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+        // Floor
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().color([0.898, 0.87, 0.815, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-width, 0.0, -depth), Vec3::Y),
+                Vertex::new(Vec3::new(width, 0.0, -depth), Vec3::Y),
+                Vertex::new(Vec3::new(width, 0.0, depth), Vec3::Y),
+                Vertex::new(Vec3::new(-width, 0.0, depth), Vec3::Y),
+            ],
+            indices: vec![2, 1, 0, 3, 2, 0],
+        });
+
+        // Roof
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().color([1.0, 0.9647, 0.9019, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-width, height, -depth), -Vec3::Y),
+                Vertex::new(Vec3::new(width, height, -depth), -Vec3::Y),
+                Vertex::new(Vec3::new(width, height, depth), -Vec3::Y),
+                Vertex::new(Vec3::new(-width, height, depth), -Vec3::Y),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().color([0.0705, 0.596, 0.2078, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-width, 0.0, -depth), Vec3::X),
+                Vertex::new(Vec3::new(-width, height, -depth), Vec3::X),
+                Vertex::new(Vec3::new(-width, height, depth), Vec3::X),
+                Vertex::new(Vec3::new(-width, 0.0, depth), Vec3::X),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+        // Left Wall
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().color([0.7725, 0.12156, 0.188235, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(width, 0.0, -depth), -Vec3::X),
+                Vertex::new(Vec3::new(width, 0.0, depth), -Vec3::X),
+                Vertex::new(Vec3::new(width, height, depth), -Vec3::X),
+                Vertex::new(Vec3::new(width, height, -depth), -Vec3::X),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().color([0.1254, 0.41176, 0.8274, 1.0]),
+            vertices: vec![
+                Vertex::new(Vec3::new(-width, 0.0, -depth), Vec3::Z),
+                Vertex::new(Vec3::new(width, 0.0, -depth), Vec3::Z),
+                Vertex::new(Vec3::new(width, height, -depth), Vec3::Z),
+                Vertex::new(Vec3::new(-width, height, -depth), Vec3::Z),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+        // material: Material::new().color([0.1254, 0.41176, 0.8274, 1.0]),
+        scene.add_mesh(Mesh {
+            transform: Transform::default(),
+            material: Material::new().emissive([1.0, 0.8588, 0.3529, 1.0], 3.0),
+            vertices: vec![
+                Vertex::new(Vec3::new(-0.8, height - 0.02, -0.8), -Vec3::Y),
+                Vertex::new(Vec3::new(0.8, height - 0.02, -0.8), -Vec3::Y),
+                Vertex::new(Vec3::new(0.8, height - 0.02, 0.8), -Vec3::Y),
+                Vertex::new(Vec3::new(-0.8, height - 0.02, 0.8), -Vec3::Y),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+        });
+
+        scene.add_sphere(Sphere::new(
+            Vec3::new(0.0, 1.0, 5.0),
+            1.0,
+            Material::new().glass(1.3),
+        ));
+        scene
+            .load_mesh(
+                Path::new("dragon_large.obj"),
+                Transform {
+                    pos: Vec3::new(0.0, 1.2, 0.0),
+                    rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
+                    scale: Vec3::splat(5.0),
+                },
+                Material::new()
+                    .color([0.96078, 0.11372, 0.4039, 1.0])
+                    .smooth(0.8)
+                    .specular([1.0; 4], 0.015),
+            )
+            .await;
+
         scene
     }
     pub fn metal(config: &wgpu::SurfaceConfiguration) -> Self {
@@ -514,16 +668,16 @@ impl Scene {
     }
 
     pub fn to_uniform(&self) -> SceneUniform {
-        let mut vertices_len: u32 = 0;
-        let mut indices_len: u32 = 0;
+        let mut n_vertices: u32 = 0;
+        let mut n_indices: u32 = 0;
         for mesh in self.meshes.iter() {
-            vertices_len += mesh.vertices.len() as u32;
-            indices_len += mesh.indices.len() as u32;
+            n_vertices += mesh.vertices.len() as u32;
+            n_indices += mesh.indices.len() as u32;
         }
         SceneUniform {
             spheres: self.spheres.len() as u32,
-            vertices: vertices_len,
-            indices: indices_len,
+            n_vertices,
+            n_indices,
             meshes: self.meshes.len() as u32,
             camera: self.camera.to_uniform(),
             nodes: self.bvh.n_nodes,
@@ -555,7 +709,7 @@ pub async fn load_binary(path: &Path) -> anyhow::Result<Vec<u8>> {
     Ok(std::fs::read(path)?)
 }
 
-pub async fn load_model_obj(path: &Path, pos: Vec3) -> Vec<Mesh> {
+pub async fn load_model_obj(path: &Path, transform: Transform, material: Material) -> Vec<Mesh> {
     let mut meshes: Vec<Mesh> = vec![];
     let path = std::path::Path::new(FILE).join("assets").join(path);
 
@@ -578,9 +732,9 @@ pub async fn load_model_obj(path: &Path, pos: Vec3) -> Vec<Mesh> {
         for (i, _) in (0..m.mesh.positions.len() / 3).enumerate() {
             vertices.push(Vertex::new(
                 Vec3::new(
-                    m.mesh.positions[i * 3] + pos.x,
-                    m.mesh.positions[i * 3 + 1] + pos.y,
-                    m.mesh.positions[i * 3 + 2] + pos.z,
+                    m.mesh.positions[i * 3],
+                    m.mesh.positions[i * 3 + 1],
+                    m.mesh.positions[i * 3 + 2],
                 ),
                 Vec3::new(
                     m.mesh.normals[i * 3],
@@ -594,13 +748,8 @@ pub async fn load_model_obj(path: &Path, pos: Vec3) -> Vec<Mesh> {
         }
 
         meshes.push(Mesh {
-            position: Vec3::ZERO,
-            size: Vec3::ONE,
-            material: Material::new().color([0.2, 0.2, 0.8, 1.0]),
-            // .emissive([1.0, 0.0, 0.0, 1.0], 0.9),
-            // .glass(1.3)
-            // .smooth(0.9)
-            // .emissive([0.2, 0.2, 0.8, 1.0], 1.0),
+            transform,
+            material,
             vertices,
             indices,
         });

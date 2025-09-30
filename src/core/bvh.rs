@@ -1,4 +1,4 @@
-use std::{f32::INFINITY, time::Instant};
+use std::time::Instant;
 
 use glam::Vec3;
 
@@ -71,7 +71,7 @@ pub struct BVH {
     pub quality: Quality,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Quality {
     Low,
     High,
@@ -132,12 +132,7 @@ impl BVH {
                     max: v0.max(v1.max(v2)).to_array(),
                     min: v0.min(v1.min(v2)).to_array(),
                 };
-                min[0] = min[0].min(tri.min[0]);
-                min[1] = min[1].min(tri.min[1]);
-                min[2] = min[2].min(tri.min[2]);
-                max[0] = max[0].max(tri.max[0]);
-                max[1] = max[1].max(tri.max[1]);
-                max[2] = max[2].max(tri.max[2]);
+                BVH::fit_bounds(&mut min, &mut max, &tri);
                 triangles.push(tri);
             }
         }
@@ -172,6 +167,13 @@ impl BVH {
         }
         stats.print();
         bvh
+    }
+
+    pub fn fit_bounds(min: &mut [f32; 3], max: &mut [f32; 3], tri: &Triangle) {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(tri.min[axis]);
+            max[axis] = max[axis].max(tri.max[axis]);
+        }
     }
 
     pub fn find_best_split(&self, node: &Node, axis: &mut usize, split_pos: &mut f32) -> f32 {
@@ -221,13 +223,13 @@ impl BVH {
         let mut left_count = 0.0;
         let mut right_count = 0.0;
         for i in 0..node.count as usize {
-            let triangle = &self.triangles[self.triangle_indices[node.first as usize + i] as usize];
-            if triangle.centroid[axis as usize] < pos {
+            let tri = &self.triangles[self.triangle_indices[node.first as usize + i] as usize];
+            if tri.centroid[axis as usize] < pos {
                 left_count += 1.0;
-                left_bounds.grow(&triangle);
+                left_bounds.grow(&tri);
             } else {
                 right_count += 1.0;
-                right_bounds.grow(&triangle);
+                right_bounds.grow(&tri);
             }
         }
         let cost = left_count * left_bounds.half_area() + right_count * right_bounds.half_area();
@@ -250,29 +252,19 @@ impl BVH {
             let mut right_max: [f32; 3] = [f32::MIN; 3];
 
             let mut left_count = 0;
-            // for i in parent_first as usize..(self.triangles.len() + parent_count as usize) {
             for i in 0..parent_count as usize {
                 let tri =
                     &self.triangles[self.triangle_indices[parent_first as usize + i] as usize];
 
                 if tri.centroid[axis] < split_pos {
-                    left_min[0] = left_min[0].min(tri.min[0]);
-                    left_min[1] = left_min[1].min(tri.min[1]);
-                    left_min[2] = left_min[2].min(tri.min[2]);
-                    left_max[0] = left_max[0].max(tri.max[0]);
-                    left_max[1] = left_max[1].max(tri.max[1]);
-                    left_max[2] = left_max[2].max(tri.max[2]);
-                    let x = left_count + parent_first as usize;
-                    let y = i + parent_first as usize;
-                    self.triangle_indices.swap(x, y);
+                    BVH::fit_bounds(&mut left_min, &mut left_max, &tri);
+                    self.triangle_indices.swap(
+                        left_count + parent_first as usize,
+                        i + parent_first as usize,
+                    );
                     left_count += 1;
                 } else {
-                    right_min[0] = right_min[0].min(tri.min[0]);
-                    right_min[1] = right_min[1].min(tri.min[1]);
-                    right_min[2] = right_min[2].min(tri.min[2]);
-                    right_max[0] = right_max[0].max(tri.max[0]);
-                    right_max[1] = right_max[1].max(tri.max[1]);
-                    right_max[2] = right_max[2].max(tri.max[2]);
+                    BVH::fit_bounds(&mut right_min, &mut right_max, &tri);
                 }
             }
             let right_count = parent_count - left_count as u32;
@@ -360,7 +352,6 @@ impl BVHStats {
 
     pub fn record_leaf_node(&mut self, triangle_count: u32, depth: u32) {
         self.record_node();
-
         self.leaf_count += 1;
         self.sum_depth += depth as f32;
         self.leaf_min_depth = self.leaf_min_depth.min(depth);

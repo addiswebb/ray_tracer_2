@@ -1,4 +1,4 @@
-use glam::Vec3;
+use glam::{Mat4, Quat, Vec3};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
@@ -93,11 +93,32 @@ impl Material {
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Mesh {
-    pub position: Vec3,
-    pub size: Vec3,
+    pub transform: Transform,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub material: Material,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Transform {
+    pub pos: Vec3,
+    pub rot: Quat,
+    pub scale: Vec3,
+}
+impl Transform {
+    pub fn to_matrix(&self) -> Mat4 {
+        Mat4::from_scale_rotation_translation(self.scale, self.rot, self.pos)
+    }
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self {
+            pos: Vec3::ZERO,
+            rot: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        }
+    }
 }
 
 #[allow(unused)]

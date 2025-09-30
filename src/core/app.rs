@@ -7,6 +7,7 @@ use egui_wgpu::{
     ScreenDescriptor,
     wgpu::{self, SurfaceError, util::DeviceExt},
 };
+use glam::Quat;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -112,9 +113,9 @@ impl AppState {
         let params = Params {
             width: 1920,
             height: 1080,
-            number_of_bounces: 1,
-            rays_per_pixel: 1,
-            skybox: 1,
+            number_of_bounces: 5,
+            rays_per_pixel: 2,
+            skybox: 0,
             frames: 0,
             accumulate: 1,
             debug_flag: 0,
@@ -133,7 +134,7 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::obj_test(&surface_config).await;
+        let scene = Scene::room_2(&surface_config).await;
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
@@ -524,11 +525,41 @@ impl App {
                                 [state.selected_entity as usize - state.scene.spheres.len()];
                             ui.heading("Mesh");
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut m.position[0]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.position[1]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.position[2]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.transform.pos.x).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.transform.pos.y).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.transform.pos.z).speed(0.01));
                                 ui.label(format!("Position"));
                             });
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut m.transform.scale.x).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.transform.scale.y).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut m.transform.scale.z).speed(0.01));
+                                ui.label(format!("Size"));
+                            });
+
+                            let (mut r_x, mut r_y, mut r_z) =
+                                m.transform.rot.to_euler(glam::EulerRot::XYX);
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut r_x)
+                                        .update_while_editing(false)
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut r_y)
+                                        .update_while_editing(false)
+                                        .speed(0.01),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut r_z)
+                                        .update_while_editing(false)
+                                        .speed(0.01),
+                                );
+                                ui.label(format!("Rotation"));
+                            });
+                            m.transform.rot = Quat::from_euler(glam::EulerRot::XYZ, r_x, r_y, r_z);
+
                             // Add size?
 
                             ui.horizontal(|ui| {
@@ -621,6 +652,38 @@ impl App {
                         "Triangle Indices: {}",
                         state.scene.bvh.triangle_indices.len()
                     ));
+
+                    egui::ComboBox::from_label("Quality")
+                        .selected_text(format!("{:?}", state.scene.bvh.quality))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut state.scene.bvh.quality,
+                                bvh::Quality::High,
+                                "High",
+                            );
+                            ui.selectable_value(
+                                &mut state.scene.bvh.quality,
+                                bvh::Quality::Low,
+                                "Low",
+                            );
+                            ui.selectable_value(
+                                &mut state.scene.bvh.quality,
+                                bvh::Quality::Disabled,
+                                "Disabled",
+                            );
+                        });
+
+                    if ui.button("Rebuild BVH").clicked() {
+                        let (vertices, indices) = state.scene.vertices_and_indices();
+                        state.scene.bvh = BVH::build(
+                            &state.scene.meshes(),
+                            vertices,
+                            indices,
+                            state.scene.bvh.quality,
+                        );
+                        state.params.frames = -1;
+                        state.average_frame_time = Duration::ZERO;
+                    }
                     ui.separator();
                     ui.horizontal(|ui| {
                         ui.label("Resolution");
@@ -665,17 +728,6 @@ impl App {
                             state.selected_entity = (state.scene.spheres.len() + i) as i32;
                         }
                     }
-                    ui.separator();
-
-                    // if ui.button("Rebuild BVH").clicked() {
-                    //     let (vertices, indices) = state.scene.vertices_and_indices();
-                    //     state.scene.bvh = BVH::build(
-                    //         &state.scene.meshes(),
-                    //         vertices,
-                    //         indices,
-                    //         bvh::Quality::Disabled,
-                    //     )
-                    // }
                 });
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {

@@ -365,6 +365,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
                 var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
                 var refractive_index = -hit.material.smoothness;
                 // TODO, select(if false, if true, condition) i think this is backwards?
+                // refractive_index = select(1.0 / refractive_index, refractive_index, front_face);
                 refractive_index = select(refractive_index, 1.0 / refractive_index, front_face);
 
                 let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
