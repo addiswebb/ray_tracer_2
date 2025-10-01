@@ -108,6 +108,11 @@ var<storage,read> nodes: array<BVHNode>;
 @group(0) @binding(8)
 var<storage,read> tri_idx: array<u32>;
 
+const SKY_HORIZON: vec4<f32> = vec4<f32>(1.0, 1.0, 1.0, 0.0);
+const SKY_ZENITH: vec4<f32> = vec4<f32>(0.0788092, 0.36480793, 0.7264151, 0.0);
+const GROUND_COLOR: vec4<f32> = vec4<f32>(0.35, 0.3, 0.35, 0.0);
+const SUN_INTENSITY: f32 = 0.1;
+const SUN_FOCUS: f32 = 500.0;
 const epsilon: f32 = 1e-5;
 
 @compute
@@ -130,18 +135,90 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 }
 
-const SKY_HORIZON: vec4<f32> = vec4<f32>(1.0, 1.0, 1.0, 0.0);
-const SKY_ZENITH: vec4<f32> = vec4<f32>(0.0788092, 0.36480793, 0.7264151, 0.0);
-const GROUND_COLOR: vec4<f32> = vec4<f32>(0.35, 0.3, 0.35, 0.0);
-const SUN_INTENSITY: f32 = 0.1;
-const SUN_FOCUS: f32 = 500.0;
-
 fn safe_normalize(vec: vec3<f32>) -> vec3<f32> {
     var n = normalize(vec);
     if n.x != n.x || n.y != n.y || n.z != n.z {
         n = vec3<f32>(0.0, 1.0, 0.0);
     }
     return n;
+}
+
+fn rand(seed: ptr<function,u32>) -> f32 {
+    return f32(next_random_number(seed)) / 4294967295.0; // 2^32 - 1
+}
+
+fn rand_unit_sphere(seed: ptr<function, u32>) -> vec3<f32> {
+    let x = rand_normal_dist(seed);
+    let y = rand_normal_dist(seed);
+    let z = rand_normal_dist(seed);
+
+    return safe_normalize(vec3(x, y, z));
+}
+
+fn rand_normal_dist(seed: ptr<function, u32>) -> f32 {
+    let theta = 2.0 * 3.1415926 * rand(seed);
+    let rho = sqrt(-2.0 * log(rand(seed)));
+    return rho * cos(theta);
+}
+
+fn next_random_number(seed: ptr<function,u32>) -> u32 {
+    *seed = *seed * 747796405u + 2891336453u;
+    var result: u32 = ((*seed >> ((*seed >> 28u) + 4u)) ^ *seed) * 277803737u;
+    result = (result >> 22u) ^ result;
+    return result;
+}
+
+fn rand_hemisphere_dir_dist(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32> {
+    let dir = rand_unit_sphere(seed);
+    return dir * sign(dot(normal, dir));
+}
+
+fn rand_in_unit_disk(seed: ptr<function, u32>) -> vec3<f32> {
+    for (var i = 0; i < 1000; i += 1) {
+        let r1 = (rand(seed) * 2.0);
+        let r2 = (rand(seed) * 2.0);
+        let p = vec3<f32>(r1, r2, 1.0) - 1.0;
+        if length(p) <= 1.0 {
+            return p;
+        }
+        i -= 1;
+    }
+    return vec3<f32>(0.0, 0.0, 0.0);
+}
+
+fn reflectance(cosine: f32, refraction_ratio: f32) -> f32 {
+    var r0 = (1.0 - refraction_ratio) / (1.0 + refraction_ratio);
+    r0 = r0 * r0;
+    return r0 + (1.0 - r0) * pow((1.0 - cosine), 5.0);
+}
+
+fn refract(uv: vec3<f32>, normal: vec3<f32>, refraction_ratio: f32) -> vec3<f32> {
+    let cos_theta = min(dot(-uv, normal), 1.0);
+    let r_out_perp = refraction_ratio * (uv + cos_theta * normal);
+    let r_out_parallel = -sqrt(abs(1.0 - length(r_out_perp))) * normal;
+    return r_out_perp + r_out_parallel;
+}
+
+fn get_environment_light(ray: Ray) -> vec4<f32> {
+    let sky_gradient_t = pow(smoothstep(0.0, 0.4, ray.dir.y), 0.35);
+    let ground_to_sky_t = smoothstep(-0.01, 0.0, ray.dir.y);
+    let sky_gradient = mix(SKY_HORIZON, SKY_ZENITH, sky_gradient_t);
+    let sun = pow(max(0.0, dot(ray.dir, vec3<f32>(0.1, 1.0, 0.1))), SUN_FOCUS) * SUN_INTENSITY;
+    let composite = mix(GROUND_COLOR, sky_gradient, ground_to_sky_t) + sun * f32(ground_to_sky_t >= 1.0);
+    return composite;
+}
+
+fn get_mesh(triangle_index: u32) -> i32 {
+    var mesh_index = -1;
+    for (var m: u32 = 0u; m < scene.meshes; m += 1u) {
+        let mesh: Mesh = meshes[m];
+        let first_tri_index = mesh.first / 3u;
+        if triangle_index >= first_tri_index && triangle_index < first_tri_index + mesh.triangles {
+            mesh_index = i32(m);
+            break;
+        }
+    }
+    return mesh_index;
 }
 
 fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32) -> Hit {
@@ -252,19 +329,6 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
     return closest_hit;
 }
 
-fn get_mesh(triangle_index: u32) -> i32 {
-    var mesh_index = -1;
-    for (var m: u32 = 0u; m < scene.meshes; m += 1u) {
-        let mesh: Mesh = meshes[m];
-        let first_tri_index = mesh.first / 3u;
-        if triangle_index >= first_tri_index && triangle_index < first_tri_index + mesh.triangles {
-            mesh_index = i32(m);
-            break;
-        }
-    }
-    return mesh_index;
-}
-
 fn ray_aabb_dist(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32) -> f32 {
     let tx1 = (b_min.x - ray.origin.x) * ray.inv_dir.x;
     let tx2 = (b_max.x - ray.origin.x) * ray.inv_dir.x;
@@ -306,48 +370,6 @@ fn calculate_ray_collions(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
     }
 
     return closest_hit;
-}
-
-fn rand(seed: ptr<function,u32>) -> f32 {
-    return f32(next_random_number(seed)) / 4294967295.0; // 2^32 - 1
-}
-
-fn rand_unit_sphere(seed: ptr<function, u32>) -> vec3<f32> {
-    let x = rand_normal_dist(seed);
-    let y = rand_normal_dist(seed);
-    let z = rand_normal_dist(seed);
-
-    return safe_normalize(vec3(x, y, z));
-}
-
-fn rand_normal_dist(seed: ptr<function, u32>) -> f32 {
-    let theta = 2.0 * 3.1415926 * rand(seed);
-    let rho = sqrt(-2.0 * log(rand(seed)));
-    return rho * cos(theta);
-}
-
-fn next_random_number(seed: ptr<function,u32>) -> u32 {
-    *seed = *seed * 747796405u + 2891336453u;
-    var result: u32 = ((*seed >> ((*seed >> 28u) + 4u)) ^ *seed) * 277803737u;
-    result = (result >> 22u) ^ result;
-    return result;
-}
-fn rand_hemisphere_dir_dist(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32> {
-    let dir = rand_unit_sphere(seed);
-    return dir * sign(dot(normal, dir));
-}
-
-fn rand_in_unit_disk(seed: ptr<function, u32>) -> vec3<f32> {
-    for (var i = 0; i < 1000; i += 1) {
-        let r1 = (rand(seed) * 2.0);
-        let r2 = (rand(seed) * 2.0);
-        let p = vec3<f32>(r1, r2, 1.0) - 1.0;
-        if length(p) <= 1.0 {
-            return p;
-        }
-        i -= 1;
-    }
-    return vec3<f32>(0.0, 0.0, 0.0);
 }
 
 fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
@@ -408,28 +430,6 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
     }
 
     return incoming_light;
-}
-
-fn reflectance(cosine: f32, refraction_ratio: f32) -> f32 {
-    var r0 = (1.0 - refraction_ratio) / (1.0 + refraction_ratio);
-    r0 = r0 * r0;
-    return r0 + (1.0 - r0) * pow((1.0 - cosine), 5.0);
-}
-
-fn refract(uv: vec3<f32>, normal: vec3<f32>, refraction_ratio: f32) -> vec3<f32> {
-    let cos_theta = min(dot(-uv, normal), 1.0);
-    let r_out_perp = refraction_ratio * (uv + cos_theta * normal);
-    let r_out_parallel = -sqrt(abs(1.0 - length(r_out_perp))) * normal;
-    return r_out_perp + r_out_parallel;
-}
-
-fn get_environment_light(ray: Ray) -> vec4<f32> {
-    let sky_gradient_t = pow(smoothstep(0.0, 0.4, ray.dir.y), 0.35);
-    let ground_to_sky_t = smoothstep(-0.01, 0.0, ray.dir.y);
-    let sky_gradient = mix(SKY_HORIZON, SKY_ZENITH, sky_gradient_t);
-    let sun = pow(max(0.0, dot(ray.dir, vec3<f32>(0.1, 1.0, 0.1))), SUN_FOCUS) * SUN_INTENSITY;
-    let composite = mix(GROUND_COLOR, sky_gradient, ground_to_sky_t) + sun * f32(ground_to_sky_t >= 1.0);
-    return composite;
 }
 
 fn frag(i: FragInput) -> vec4<f32> {
