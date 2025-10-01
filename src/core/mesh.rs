@@ -47,7 +47,7 @@ pub struct Material {
     pub emission_strength: f32,
     pub smoothness: f32,
     pub specular: f32,
-    pub _padding: f32,
+    pub ior: f32,
 }
 
 impl Material {
@@ -59,7 +59,7 @@ impl Material {
             emission_strength: 0.0,
             smoothness: 0.0,
             specular: 0.1,
-            _padding: 0.0,
+            ior: 0.0,
         }
     }
     pub fn color(&mut self, color: [f32; 4]) -> Self {
@@ -74,8 +74,8 @@ impl Material {
         *self
     }
     #[allow(unused)]
-    pub fn glass(&mut self, refractive_index: f32) -> Self {
-        self.smoothness = -refractive_index;
+    pub fn glass(&mut self, index_of_refraction: f32) -> Self {
+        self.ior = index_of_refraction;
         *self
     }
     #[allow(unused)]

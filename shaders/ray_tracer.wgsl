@@ -16,6 +16,7 @@ struct Material {
     emission_strength: f32,
     smoothness: f32,
     specular: f32,
+    ior: f32,
 }
 
 struct Sphere {

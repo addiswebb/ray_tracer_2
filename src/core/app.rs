@@ -520,6 +520,11 @@ impl App {
                                 );
                                 ui.label(format!("Smoothness"));
                             });
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut s.material.ior).speed(0.01));
+                                ui.label(format!("Refractive Index"));
+                            });
                         } else {
                             let m = &mut state.scene.meshes
                                 [state.selected_entity as usize - state.scene.spheres.len()];
@@ -626,6 +631,10 @@ impl App {
                                     egui::DragValue::new(&mut m.material.smoothness).speed(0.01),
                                 );
                                 ui.label(format!("Smoothness"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut m.material.ior).speed(0.01));
+                                ui.label(format!("Refractive Index"));
                             });
                         }
                     }
