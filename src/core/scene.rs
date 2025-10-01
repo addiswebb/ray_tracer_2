@@ -163,6 +163,7 @@ impl Scene {
         scene.meshes.extend(mesh);
 
         scene.add_mesh(Mesh {
+            label: None,
             transform: Transform::default(),
             material: Material::new()
                 .color([1.0, 1.0, 0.0, 1.0])
@@ -321,6 +322,7 @@ impl Scene {
 
         // Floor
         scene.add_mesh(Mesh {
+            label: Some("Floor".to_string()),
             transform: Transform::default(),
             material: Material::new().color([1.0, 0.0, 0.0, 1.0]),
             vertices: vec![
@@ -333,6 +335,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
+            label: None,
             transform: Transform::default(),
             material: Material::new().color([0.0, 0.3, 0.3, 1.0]),
             vertices: vec![
@@ -345,6 +348,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
+            label: None,
             transform: Transform::default(),
             material: Material::new()
                 .specular([1.0, 1.0, 1.0, 1.0], 1.0)
@@ -359,6 +363,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
+            label: None,
             transform: Transform::default(),
             material: Material::new()
                 .specular([1.0, 1.0, 1.0, 1.0], 0.99)
@@ -373,6 +378,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
+            label: None,
             transform: Transform::default(),
             material: Material::new()
                 .color([0.0, 0.5, 1.0, 1.0])
@@ -388,6 +394,7 @@ impl Scene {
         });
         // Back wall (blue)
         scene.add_mesh(Mesh {
+            label: None,
             transform: Transform::default(),
             material: Material::new()
                 .color([0.2, 0.2, 0.82, 1.0])
@@ -402,6 +409,7 @@ impl Scene {
             indices: vec![2, 1, 0, 3, 2, 0],
         });
         scene.add_mesh(Mesh {
+            label: None,
             transform: Transform::default(),
             material: Material::new().emissive([1.0, 1.0, 1.0, 1.0], 3.0),
             vertices: vec![
@@ -449,6 +457,7 @@ impl Scene {
         let height = 4.0;
         // Large floor
         scene.add_mesh(Mesh {
+            label: Some("Large Floor".to_string()),
             transform: Transform::default(),
             material: Material::new().color([0.4, 0.4, 0.64313, 1.0]),
             vertices: vec![
@@ -461,6 +470,7 @@ impl Scene {
         });
         // Large Roof
         scene.add_mesh(Mesh {
+            label: Some("Large Roof".to_string()),
             transform: Transform::default(),
             material: Material::new().color([0.898, 0.87, 0.815, 1.0]),
             vertices: vec![
@@ -473,6 +483,7 @@ impl Scene {
         });
         // Floor
         scene.add_mesh(Mesh {
+            label: Some("Floor".to_string()),
             transform: Transform::default(),
             material: Material::new().color([0.898, 0.87, 0.815, 1.0]),
             vertices: vec![
@@ -486,6 +497,7 @@ impl Scene {
 
         // Roof
         scene.add_mesh(Mesh {
+            label: Some("Roof".to_string()),
             transform: Transform::default(),
             material: Material::new().color([1.0, 0.9647, 0.9019, 1.0]),
             vertices: vec![
@@ -498,6 +510,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
+            label: Some("Right Wall".to_string()),
             transform: Transform::default(),
             material: Material::new().color([0.0705, 0.596, 0.2078, 1.0]),
             vertices: vec![
@@ -510,6 +523,7 @@ impl Scene {
         });
         // Left Wall
         scene.add_mesh(Mesh {
+            label: Some("Left Wall".to_string()),
             transform: Transform::default(),
             material: Material::new().color([0.7725, 0.12156, 0.188235, 1.0]),
             vertices: vec![
@@ -522,6 +536,7 @@ impl Scene {
         });
 
         scene.add_mesh(Mesh {
+            label: Some("Back Wall".to_string()),
             transform: Transform::default(),
             material: Material::new().color([0.1254, 0.41176, 0.8274, 1.0]),
             vertices: vec![
@@ -534,8 +549,9 @@ impl Scene {
         });
         // material: Material::new().color([0.1254, 0.41176, 0.8274, 1.0]),
         scene.add_mesh(Mesh {
+            label: Some("Light".to_string()),
             transform: Transform::default(),
-            material: Material::new().emissive([1.0, 0.8588, 0.3529, 1.0], 3.0),
+            material: Material::new().emissive([1.0, 0.8588, 0.3529, 1.0], 9.0),
             vertices: vec![
                 Vertex::new(Vec3::new(-0.8, height - 0.02, -0.8), -Vec3::Y),
                 Vertex::new(Vec3::new(0.8, height - 0.02, -0.8), -Vec3::Y),
@@ -714,9 +730,9 @@ pub async fn load_binary(path: &Path) -> anyhow::Result<Vec<u8>> {
 
 pub async fn load_model_obj(path: &Path, transform: Transform, material: Material) -> Vec<Mesh> {
     let mut meshes: Vec<Mesh> = vec![];
-    let path = std::path::Path::new(FILE).join("assets").join(path);
+    let file_path = std::path::Path::new(FILE).join("assets").join(path);
 
-    let obj_text = load_string(&path).await.unwrap();
+    let obj_text = load_string(&file_path).await.unwrap();
     let obj_cursor = Cursor::new(obj_text);
     let mut obj_reader = BufReader::new(obj_cursor);
     let (models, _) = tobj::load_obj_buf(
@@ -751,6 +767,7 @@ pub async fn load_model_obj(path: &Path, transform: Transform, material: Materia
         }
 
         meshes.push(Mesh {
+            label: Some(path.to_str().unwrap().to_string()),
             transform,
             material,
             vertices,

@@ -729,11 +729,11 @@ impl App {
                         }
                     }
 
-                    for (i, _) in state.scene.meshes.iter().enumerate() {
+                    for (i, m) in state.scene.meshes.iter().enumerate() {
                         let selected = state.selected_entity - state.scene.spheres.len() as i32
                             == i as i32
                             && !nothing_selected;
-                        if ui.selectable_label(selected, "Mesh").clicked() {
+                        if ui.selectable_label(selected, m.label.clone().unwrap_or("Mesh".to_owned())).clicked() {
                             state.selected_entity = (state.scene.spheres.len() + i) as i32;
                         }
                     }

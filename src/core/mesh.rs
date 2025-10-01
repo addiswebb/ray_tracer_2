@@ -93,6 +93,7 @@ impl Material {
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Mesh {
+    pub label: Option<String>,
     pub transform: Transform,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
@@ -121,7 +122,6 @@ impl Default for Transform {
     }
 }
 
-#[allow(unused)]
 impl Mesh {
     pub fn material(&mut self, material: Material) -> &Self {
         self.material = material;
