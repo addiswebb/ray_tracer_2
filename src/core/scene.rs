@@ -438,6 +438,36 @@ impl Scene {
         scene
     }
 
+    pub async fn dragon(config: &wgpu::SurfaceConfiguration) -> Self {
+        let mut scene = Scene::new(config);
+        scene.set_camera(&CameraDescriptor {
+            origin: Vec3::new(0.0, 1.2, 9.0),
+            look_at: Vec3::new(0.0, 1.2, 8.0),
+            view_up: Vec3::new(0.0, 1.0, 0.0),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            aperture: 0.0,
+            focus_dist: 0.1,
+        });
+
+        scene
+            .load_mesh(
+                Path::new("dragon.obj"),
+                Transform {
+                    pos: Vec3::new(0.0, 1.2, 0.0),
+                    rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
+                    scale: Vec3::splat(5.0),
+                },
+                Material::new()
+                    .color([0.96078, 0.11372, 0.4039, 1.0])
+                    .smooth(0.8)
+                    .specular([1.0; 4], 0.015),
+            )
+            .await;
+        scene
+    }
     pub async fn room_2(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {

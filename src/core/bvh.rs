@@ -4,18 +4,17 @@ use glam::Vec3;
 
 use crate::core::mesh::{MeshUniform, Vertex};
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+// Triangle is not used by gpu, replace array with Vec3
+#[derive(Debug, Copy, Clone, Default)]
 pub struct Triangle {
-    pub vertex_0: [f32; 3],
-    pub vertex_1: [f32; 3],
-    pub vertex_2: [f32; 3],
-    pub centroid: [f32; 3],
-    pub min: [f32; 3],
-    pub max: [f32; 3],
+    pub vertex_0: Vec3,
+    pub vertex_1: Vec3,
+    pub vertex_2: Vec3,
+    pub centroid: Vec3,
+    pub min: Vec3,
+    pub max: Vec3,
 }
 
-// Add padding correctly
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Node {
@@ -45,8 +44,8 @@ pub struct Aabb {
 
 impl Aabb {
     pub fn grow(&mut self, p: &Triangle) {
-        self.min = Vec3::from_array(BVH::fminf(self.min.to_array(), p.min));
-        self.max = Vec3::from_array(BVH::fmaxf(self.max.to_array(), p.max));
+        self.min = self.min.min(p.min);
+        self.max = self.max.max(p.max);
     }
     pub fn half_area(&self) -> f32 {
         let e = self.max - self.min;
@@ -118,19 +117,18 @@ impl BVH {
                 let index2 = indices[first + i * 3 + 1] as usize;
                 let index3 = indices[first + i * 3 + 2] as usize;
 
-                // let mesh_pos = Vec3::from_array(mesh.pos);
-                let v0 = Vec3::from_array(vertices[offset + index1].pos); // + mesh_pos;
-                let v1 = Vec3::from_array(vertices[offset + index2].pos); // + mesh_pos;
-                let v2 = Vec3::from_array(vertices[offset + index3].pos); // + mesh_pos;
+                let v0 = Vec3::from_array(vertices[offset + index1].pos);
+                let v1 = Vec3::from_array(vertices[offset + index2].pos);
+                let v2 = Vec3::from_array(vertices[offset + index3].pos);
                 let centroid = (v0 + v1 + v2) * (1.0 / 3.0);
 
                 let tri = Triangle {
-                    vertex_0: v0.to_array(),
-                    vertex_1: v1.to_array(),
-                    vertex_2: v2.to_array(),
-                    centroid: centroid.to_array(),
-                    max: v0.max(v1.max(v2)).to_array(),
-                    min: v0.min(v1.min(v2)).to_array(),
+                    vertex_0: v0,
+                    vertex_1: v1,
+                    vertex_2: v2,
+                    centroid: centroid,
+                    max: v0.max(v1.max(v2)),
+                    min: v0.min(v1.min(v2)),
                 };
                 BVH::fit_bounds(&mut min, &mut max, &tri);
                 triangles.push(tri);
