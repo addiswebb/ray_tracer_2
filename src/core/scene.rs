@@ -553,20 +553,20 @@ impl Scene {
                 .specular([1.0; 4], 0.517)
                 .glass(1.5),
         ));
-        // scene
-        //     .load_mesh(
-        //         Path::new("dragon.obj"),
-        //         Transform {
-        //             pos: Vec3::new(0.0, 1.2, 0.0),
-        //             rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
-        //             scale: Vec3::splat(5.0),
-        //         },
-        //         Material::new()
-        //             .color([0.96078, 0.11372, 0.4039, 1.0])
-        //             .smooth(0.8)
-        //             .specular([1.0; 4], 0.015),
-        //     )
-        //     .await;
+        scene
+            .load_mesh(
+                Path::new("dragon.obj"),
+                Transform {
+                    pos: Vec3::new(0.0, 1.2, 0.0),
+                    rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
+                    scale: Vec3::splat(5.0),
+                },
+                Material::new()
+                    .color([0.96078, 0.11372, 0.4039, 1.0])
+                    .smooth(0.8)
+                    .specular([1.0; 4], 0.015),
+            )
+            .await;
 
         scene
     }

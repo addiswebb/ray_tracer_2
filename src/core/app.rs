@@ -428,7 +428,7 @@ impl App {
                     });
 
                     ui.add(
-                        egui::Slider::new(&mut camera.focus_dist, 0.0..=10.0)
+                        egui::Slider::new(&mut camera.focus_dist, 0.0..=1000.0)
                             .text("Focus Distance"),
                     );
                     ui.add(egui::Slider::new(&mut camera.aperture, -2.0..=2.0).text("Aperture"));

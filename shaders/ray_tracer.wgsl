@@ -362,9 +362,9 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
             ray.origin = hit.hit_point;
             let unit_ray_dir = safe_normalize(ray.dir);
             // Used for glass
-            if hit.material.smoothness < 0.0 {
+            if hit.material.ior > 0.0 {
                 var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
-                var refractive_index = -hit.material.smoothness;
+                var refractive_index = hit.material.ior;
                 // TODO, select(if false, if true, condition) i think this is backwards?
                 // refractive_index = select(1.0 / refractive_index, refractive_index, front_face);
                 refractive_index = select(refractive_index, 1.0 / refractive_index, front_face);
@@ -372,11 +372,13 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
                 let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
                 let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
                 let cannot_refract = refractive_index * sin_theta > 1.0;
-                if cannot_refract || reflectance(cos_theta, refractive_index) > rand(seed) {
-                    ray.dir = reflect(unit_ray_dir, hit.normal);
-                } else {
-                    ray.dir = refract(unit_ray_dir, hit.normal, refractive_index);
-                }
+                let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
+                let reflect_dir = normalize(mix(diffuse_dir, reflect(unit_ray_dir, hit.normal), hit.material.specular));
+                let refract_dir = normalize(mix(diffuse_dir, refract(unit_ray_dir, hit.normal, refractive_index), hit.material.smoothness));
+
+                let follow_reflect = rand(seed) < reflectance(cos_theta, refractive_index);
+
+                ray.dir = select(refract_dir, reflect_dir, follow_reflect);
             } else {
                 let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
                 let specular_dir = reflect(unit_ray_dir, hit.normal);
