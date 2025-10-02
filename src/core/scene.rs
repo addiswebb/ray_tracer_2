@@ -234,10 +234,10 @@ impl Scene {
             look_at: Vec3::new(0.0, 0.0, 0.0),
             view_up: Vec3::new(0.0, 1.0, 0.0),
             fov: 20.0,
-            aspect: config.width as f32 / config.height as f32,
+            aspect: 16.0 / 9.0,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
+            aperture: 0.6,
             focus_dist: 10.0,
         });
         scene.add_spheres(vec![
@@ -258,7 +258,8 @@ impl Scene {
                 1.0,
                 Material::new()
                     .color([0.7, 0.6, 0.5, 1.0])
-                    .specular([1.0, 1.0, 1.0, 1.0], 0.9),
+                    .specular([0.7, 0.6, 0.5, 1.0], 1.0)
+                    .smooth(1.0),
             ),
         ]);
 

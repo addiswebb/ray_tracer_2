@@ -76,6 +76,7 @@ impl Material {
     #[allow(unused)]
     pub fn glass(&mut self, index_of_refraction: f32) -> Self {
         self.ior = index_of_refraction;
+        self.smoothness = 1.0;
         *self
     }
     #[allow(unused)]
