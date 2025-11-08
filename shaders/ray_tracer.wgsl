@@ -141,14 +141,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 }
 
-fn safe_normalize(vec: vec3<f32>) -> vec3<f32> {
-    var n = normalize(vec);
-    if n.x != n.x || n.y != n.y || n.z != n.z {
-        n = vec3<f32>(0.0, 1.0, 0.0);
-    }
-    return n;
-}
-
 fn rand(seed: ptr<function,u32>) -> f32 {
     return f32(next_random_number(seed)) / 4294967295.0; // 2^32 - 1
 }
@@ -238,7 +230,7 @@ fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32) -> Hit {
             hit.hit = true;
             hit.hit_point = ray.origin + ray.dir * dst;
             hit.dst = dst;
-            hit.normal = safe_normalize(hit.hit_point - centre);
+            hit.normal = normalize(hit.hit_point - centre);
         }
     }
     return hit;
@@ -267,7 +259,7 @@ fn ray_triangle(ray: Ray, tri: Triangle) -> Hit {
     if dst > epsilon && u >= 0.0 && v >= 0.0 && w >= 0.0 {
         hit.hit = true;
         hit.hit_point = ray.origin + ray.dir * dst;
-        hit.normal = safe_normalize(tri.n1 * w + tri.n2 * u + tri.n3 * v);
+        hit.normal = normalize(tri.n1 * w + tri.n2 * u + tri.n3 * v);
         hit.dst = dst;
     } else {
         hit.hit = false;
@@ -367,7 +359,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
         if hit.hit {
             let is_specular_bounce = hit.material.specular >= rand(seed);
             ray.origin = hit.hit_point;
-            let unit_ray_dir = safe_normalize(ray.dir);
+            let unit_ray_dir = normalize(ray.dir);
             // Used for glass
             if hit.material.ior > 0.0 {
                 var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
@@ -379,7 +371,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
                 let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
                 let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
                 let cannot_refract = refractive_index * sin_theta > 1.0;
-                let diffuse_dir = normalize(rand_hemisphere(hit.normal, seed));
+                let diffuse_dir = rand_hemisphere(hit.normal, seed);
                 let reflect_dir = normalize(mix(diffuse_dir, reflect(unit_ray_dir, hit.normal), hit.material.specular));
                 let refract_dir = normalize(mix(diffuse_dir, refract(unit_ray_dir, hit.normal, refractive_index), hit.material.smoothness));
 
@@ -387,8 +379,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
 
                 ray.dir = select(refract_dir, reflect_dir, follow_reflect);
             } else {
-                // let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
-                let diffuse_dir = normalize(rand_hemisphere(hit.normal, seed));
+                let diffuse_dir = rand_hemisphere(hit.normal, seed);
                 let specular_dir = reflect(unit_ray_dir, hit.normal);
                 ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
             }
