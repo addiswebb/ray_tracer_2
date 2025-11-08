@@ -8,7 +8,7 @@ struct Params {
     accumulate: i32,
     debug_flag: i32,
     debug_scale: i32,
-};
+}
 struct Material {
     color: vec4<f32>,
     emission_color: vec4<f32>,
@@ -23,12 +23,12 @@ struct Sphere {
     position: vec3<f32>,
     radius: f32,
     material: Material,
-};
+}
 
 struct Vertex {
     pos: vec3<f32>,
     normal: vec3<f32>
-};
+}
 
 struct Mesh {
     first: u32,
@@ -36,7 +36,7 @@ struct Mesh {
     offset: u32,
     pos: vec3<f32>,
     material: Material,
-};
+}
 struct Scene {
     spheres: u32,
     vertices: u32,
@@ -55,7 +55,7 @@ struct BVHNode {
     right: u32,
     first: u32,
     count: u32,
-};
+}
 
 struct Camera {
     origin: vec3<f32>,
@@ -73,7 +73,7 @@ struct Camera {
 struct FragInput {
     pos: vec2<f32>,
     size: vec2<f32>,
-};
+}
 
 struct Ray {
     origin: vec3<f32>,
@@ -89,6 +89,16 @@ struct Hit {
     material: Material,
 }
 
+struct Triangle {
+    v1: vec3<f32>,
+    v2: vec3<f32>,
+    v3: vec3<f32>,
+    n1: vec3<f32>,
+    n2: vec3<f32>,
+    n3: vec3<f32>,
+    mesh_index: u32,
+}
+
 @group(0) @binding(0)
 var<uniform> params: Params;
 @group(0) @binding(1)
@@ -98,15 +108,11 @@ var texture: texture_storage_2d<rgba32float,read_write>;
 @group(0) @binding(3)
 var<storage,read> spheres: array<Sphere>;
 @group(0) @binding(4)
-var<storage,read> vertices: array<Vertex>;
+var<storage,read> triangles: array<Triangle>;
 @group(0) @binding(5)
-var<storage,read> indices: array<u32>;
-@group(0) @binding(6)
 var<storage,read> meshes: array<Mesh>;
-@group(0) @binding(7)
+@group(0) @binding(6)
 var<storage,read> nodes: array<BVHNode>;
-@group(0) @binding(8)
-var<storage,read> tri_idx: array<u32>;
 
 const SKY_HORIZON: vec4<f32> = vec4<f32>(1.0, 1.0, 1.0, 0.0);
 const SKY_ZENITH: vec4<f32> = vec4<f32>(0.0788092, 0.36480793, 0.7264151, 0.0);
@@ -251,16 +257,16 @@ fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32) -> Hit {
     return hit;
 }
 
-fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit {
+fn ray_triangle(ray: Ray, tri: Triangle) -> Hit {
     var hit: Hit;
-    let edge_ab = b.pos - a.pos;
-    let edge_ac = c.pos - a.pos;
+    let edge_ab = tri.v2 - tri.v1;
+    let edge_ac = tri.v3 - tri.v1;
     let normal = cross(edge_ab, edge_ac);
-    let ao = ray.origin - a.pos;
+    let ao = ray.origin - tri.v1;
     let dao = cross(ao, ray.dir);
 
     let determinant = -dot(ray.dir, normal);
-    if determinant < 0.000001 {
+    if abs(determinant) < 0.000001 {
         hit.hit = false;
         return hit;
     }
@@ -274,7 +280,7 @@ fn ray_triangle(ray: Ray, a: Vertex, b: Vertex, c: Vertex) -> Hit {
     if dst > epsilon && u >= 0.0 && v >= 0.0 && w >= 0.0 {
         hit.hit = true;
         hit.hit_point = ray.origin + ray.dir * dst;
-        hit.normal = safe_normalize(a.normal * w + b.normal * u + c.normal * v);
+        hit.normal = safe_normalize(tri.n1 * w + tri.n2 * u + tri.n3 * v);
         hit.dst = dst;
     } else {
         hit.hit = false;
@@ -298,27 +304,11 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
         if node.count > 0u {
             (*stats)[1] += i32(node.count); // Track triangle checks
             for (var j: u32 = 0u; j < node.count; j += 1u) {
-                let tri_num = tri_idx[node.first + j] * 3u;
-                // let mesh_index = get_mesh(tri_num);
-                let index1 = indices[tri_num];
-                let index2 = indices[tri_num + 1u];
-                let index3 = indices[tri_num + 2u];
-
-                var v1 = vertices[index1];
-                var v2 = vertices[index2];
-                var v3 = vertices[index3];
-                let hit = ray_triangle(ray, v1, v2, v3);
+                let tri = triangles[node.first + j];
+                let hit = ray_triangle(ray, tri);
                 if hit.hit && hit.dst < closest_hit.dst {
                     closest_hit = hit;
-                    // closest_hit.material = meshes[mesh_index].material;
-                    // closest_hit.material = meshes[0].material;
-                    let material_index = tri_num % 4u; // Cycle through 4 materials
-                    closest_hit.material.color = vec4<f32>(
-                        select(0.8, 0.2, material_index == 0u),
-                        select(0.8, 0.2, material_index == 1u),
-                        select(0.8, 0.2, material_index == 2u),
-                        1.0
-                    );
+                    closest_hit.material = meshes[tri.mesh_index].material;
                 }
             }
         } else { // Otherwise its root node, push children onto the stack

@@ -13,6 +13,23 @@ pub struct BVHTriangle {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+pub struct PackedTriangle {
+    pub v1: [f32; 3],
+    pub _p1: f32,
+    pub v2: [f32; 3],
+    pub _p2: f32,
+    pub v3: [f32; 3],
+    pub _p3: f32,
+    pub n1: [f32; 3],
+    pub _p4: f32,
+    pub n2: [f32; 3],
+    pub _p5: f32,
+    pub n3: [f32; 3],
+    pub mesh_index: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Node {
     pub aabb_min: [f32; 3],
     pub _p1: f32,
@@ -60,6 +77,7 @@ impl Default for Aabb {
 #[derive(Debug)]
 pub struct BVH {
     pub triangles: Vec<BVHTriangle>,
+    pub packed_triangles: Vec<PackedTriangle>,
     pub nodes: Vec<Node>,
     pub triangle_indices: Vec<u32>,
     pub n_nodes: u32,
@@ -80,6 +98,7 @@ impl BVH {
     pub fn empty() -> Self {
         Self {
             triangles: vec![],
+            packed_triangles: vec![],
             nodes: vec![],
             triangle_indices: vec![],
             n_nodes: 0,
@@ -97,6 +116,7 @@ impl BVH {
 
         let number_of_triangles = indices.len() / 3;
         let mut triangles = Vec::with_capacity(number_of_triangles);
+        let mut packed_triangles = Vec::with_capacity(number_of_triangles);
         if number_of_triangles == 0 {
             return Self::empty();
         }
@@ -105,7 +125,8 @@ impl BVH {
         let mut max: [f32; 3] = [f32::MIN; 3];
 
         let mut nodes = vec![Node::default(); BVH::MAX_NODES as usize];
-        for mesh in meshes {
+        for (mesh_index, mesh) in meshes.iter().enumerate() {
+            println!("I: {mesh_index}");
             let first = mesh.first as usize;
             let offset = mesh.offset as usize;
             for i in 0..mesh.triangles as usize {
@@ -113,18 +134,37 @@ impl BVH {
                 let index2 = indices[first + i * 3 + 1] as usize;
                 let index3 = indices[first + i * 3 + 2] as usize;
 
-                let v0 = Vec3::from_array(vertices[offset + index1].pos);
-                let v1 = Vec3::from_array(vertices[offset + index2].pos);
-                let v2 = Vec3::from_array(vertices[offset + index3].pos);
-                let centroid = (v0 + v1 + v2) * (1.0 / 3.0);
+                let v1 = Vec3::from_array(vertices[offset + index1].pos);
+                let v2 = Vec3::from_array(vertices[offset + index2].pos);
+                let v3 = Vec3::from_array(vertices[offset + index3].pos);
+
+                let n1 = Vec3::from_array(vertices[offset + index1].normal);
+                let n2 = Vec3::from_array(vertices[offset + index2].normal);
+                let n3 = Vec3::from_array(vertices[offset + index3].normal);
+                let centroid = (v1 + v2 + v3) * (1.0 / 3.0);
 
                 let tri = BVHTriangle {
                     centroid: centroid,
-                    max: v0.max(v1.max(v2)),
-                    min: v0.min(v1.min(v2)),
+                    max: v1.max(v2.max(v3)),
+                    min: v1.min(v2.min(v3)),
                 };
                 BVH::fit_bounds(&mut min, &mut max, &tri);
                 triangles.push(tri);
+
+                packed_triangles.push(PackedTriangle {
+                    v1: v1.to_array(),
+                    v2: v2.to_array(),
+                    v3: v3.to_array(),
+                    n1: n1.to_array(),
+                    n2: n2.to_array(),
+                    n3: n3.to_array(),
+                    mesh_index: mesh_index as u32,
+                    _p1: 1.0,
+                    _p2: 1.0,
+                    _p3: 1.0,
+                    _p4: 1.0,
+                    _p5: 1.0,
+                })
             }
         }
         nodes[0] = Node {
@@ -141,6 +181,7 @@ impl BVH {
         let mut bvh = Self {
             triangles,
             nodes,
+            packed_triangles,
             triangle_indices: (0..number_of_triangles)
                 .into_iter()
                 .map(|i| i as u32)
@@ -250,6 +291,10 @@ impl BVH {
                 if tri.centroid[axis] < split_pos {
                     BVH::fit_bounds(&mut left_min, &mut left_max, &tri);
                     self.triangle_indices.swap(
+                        left_count + parent_first as usize,
+                        i + parent_first as usize,
+                    );
+                    self.packed_triangles.swap(
                         left_count + parent_first as usize,
                         i + parent_first as usize,
                     );
