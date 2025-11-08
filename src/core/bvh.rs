@@ -126,7 +126,6 @@ impl BVH {
 
         let mut nodes = vec![Node::default(); BVH::MAX_NODES as usize];
         for (mesh_index, mesh) in meshes.iter().enumerate() {
-            println!("I: {mesh_index}");
             let first = mesh.first as usize;
             let offset = mesh.offset as usize;
             for i in 0..mesh.triangles as usize {

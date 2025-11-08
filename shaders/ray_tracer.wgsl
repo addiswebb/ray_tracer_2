@@ -158,25 +158,12 @@ fn rand_unit_sphere(seed: ptr<function, u32>) -> vec3<f32> {
     let y = rand_normal_dist(seed);
     let z = rand_normal_dist(seed);
 
-    return safe_normalize(vec3(x, y, z));
+    return normalize(vec3(x, y, z));
 }
 
-fn rand_hemisphere_cosine(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32> {
-    let r1 = rand(seed);
-    let r2 = rand(seed);
-
-    let phi = 2.0 * 3.1415926 * r1;
-    let z = sqrt(r2);  // Cosine distribution
-    let sin_theta = sqrt(1.0 - z * z);
-
-    let local_dir = vec3<f32>(cos(phi) * sin_theta, sin(phi) * sin_theta, z);
-
-    // Build orthonormal basis around normal
-    let up = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(1.0, 0.0, 0.0), abs(normal.z) > 0.999);
-    let tangent = normalize(cross(up, normal));
-    let bitangent = cross(normal, tangent);
-
-    return tangent * local_dir.x + bitangent * local_dir.y + normal * local_dir.z;
+fn rand_hemisphere(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32> {
+    let dir = rand_unit_sphere(seed);
+    return dir * sign(dot(normal, dir));
 }
 
 fn rand_normal_dist(seed: ptr<function, u32>) -> f32 {
@@ -392,8 +379,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
                 let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
                 let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
                 let cannot_refract = refractive_index * sin_theta > 1.0;
-                // let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
-                let diffuse_dir = normalize(rand_hemisphere_cosine(hit.normal, seed));
+                let diffuse_dir = normalize(rand_hemisphere(hit.normal, seed));
                 let reflect_dir = normalize(mix(diffuse_dir, reflect(unit_ray_dir, hit.normal), hit.material.specular));
                 let refract_dir = normalize(mix(diffuse_dir, refract(unit_ray_dir, hit.normal, refractive_index), hit.material.smoothness));
 
@@ -402,7 +388,7 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
                 ray.dir = select(refract_dir, reflect_dir, follow_reflect);
             } else {
                 // let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
-                let diffuse_dir = normalize(rand_hemisphere_cosine(hit.normal, seed));
+                let diffuse_dir = normalize(rand_hemisphere(hit.normal, seed));
                 let specular_dir = reflect(unit_ray_dir, hit.normal);
                 ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
             }

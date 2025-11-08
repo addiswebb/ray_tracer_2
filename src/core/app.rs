@@ -115,7 +115,7 @@ impl AppState {
             height: 1080,
             number_of_bounces: 32,
             rays_per_pixel: 1,
-            skybox: 1,
+            skybox: 0,
             frames: 0,
             accumulate: 1,
             debug_flag: 0,
