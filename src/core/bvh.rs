@@ -4,12 +4,8 @@ use glam::Vec3;
 
 use crate::core::mesh::{MeshUniform, Vertex};
 
-// Triangle is not used by gpu, replace array with Vec3
 #[derive(Debug, Copy, Clone, Default)]
-pub struct Triangle {
-    pub vertex_0: Vec3,
-    pub vertex_1: Vec3,
-    pub vertex_2: Vec3,
+pub struct BVHTriangle {
     pub centroid: Vec3,
     pub min: Vec3,
     pub max: Vec3,
@@ -43,7 +39,7 @@ pub struct Aabb {
 }
 
 impl Aabb {
-    pub fn grow(&mut self, p: &Triangle) {
+    pub fn grow(&mut self, p: &BVHTriangle) {
         self.min = self.min.min(p.min);
         self.max = self.max.max(p.max);
     }
@@ -63,7 +59,7 @@ impl Default for Aabb {
 
 #[derive(Debug)]
 pub struct BVH {
-    pub triangles: Vec<Triangle>,
+    pub triangles: Vec<BVHTriangle>,
     pub nodes: Vec<Node>,
     pub triangle_indices: Vec<u32>,
     pub n_nodes: u32,
@@ -122,10 +118,7 @@ impl BVH {
                 let v2 = Vec3::from_array(vertices[offset + index3].pos);
                 let centroid = (v0 + v1 + v2) * (1.0 / 3.0);
 
-                let tri = Triangle {
-                    vertex_0: v0,
-                    vertex_1: v1,
-                    vertex_2: v2,
+                let tri = BVHTriangle {
                     centroid: centroid,
                     max: v0.max(v1.max(v2)),
                     min: v0.min(v1.min(v2)),
@@ -167,7 +160,7 @@ impl BVH {
         bvh
     }
 
-    pub fn fit_bounds(min: &mut [f32; 3], max: &mut [f32; 3], tri: &Triangle) {
+    pub fn fit_bounds(min: &mut [f32; 3], max: &mut [f32; 3], tri: &BVHTriangle) {
         for axis in 0..3 {
             min[axis] = min[axis].min(tri.min[axis]);
             max[axis] = max[axis].max(tri.max[axis]);

@@ -10,7 +10,7 @@ use crate::core::{
     texture::Texture,
 };
 
-const WORKGROUP_SIZE: (u32, u32) = (16, 16);
+const WORKGROUP_SIZE: (u32, u32) = (8, 8);
 
 pub struct RayTracer {
     pub pipeline: wgpu::ComputePipeline,
@@ -145,9 +145,7 @@ impl RayTracer {
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Vertex Buffer"),
             size: (max_vertices * std::mem::size_of::<Vertex>() as wgpu::BufferAddress),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
 
@@ -155,9 +153,7 @@ impl RayTracer {
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Index Buffer"),
             size: (max_indices * std::mem::size_of::<u32>() as wgpu::BufferAddress),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
 
@@ -165,34 +161,26 @@ impl RayTracer {
         let sphere_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Sphere Buffer"),
             size: (max_spheres * std::mem::size_of::<Sphere>() as wgpu::BufferAddress),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
         let max_meshes = 10;
         let mesh_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Mesh Buffer"),
             size: (max_meshes * std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
         let bvh_nodes_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Nodes Buffer"),
             size: (BVH::MAX_NODES as u64 * std::mem::size_of::<Node>() as wgpu::BufferAddress),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
         let triangle_indices_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Triangle Indices Buffer"),
             size: (100000 * std::mem::size_of::<u32>() as wgpu::BufferAddress),
-            usage: wgpu::BufferUsages::UNIFORM
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

@@ -113,9 +113,9 @@ impl AppState {
         let params = Params {
             width: 1920,
             height: 1080,
-            number_of_bounces: 5,
-            rays_per_pixel: 2,
-            skybox: 0,
+            number_of_bounces: 32,
+            rays_per_pixel: 1,
+            skybox: 1,
             frames: 0,
             accumulate: 1,
             debug_flag: 0,
@@ -269,6 +269,7 @@ impl App {
             0,
             bytemuck::cast_slice(&[state.params]),
         );
+        // Todo: investigate performance effects of this
         state
             .ray_tracer
             .update_buffers(&state.queue, &mut state.scene);

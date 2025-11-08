@@ -150,7 +150,7 @@ impl Scene {
         scene.meshes.extend(mesh);
 
         let mut mesh = load_model_obj(
-            Path::new("dragon.obj"),
+            Path::new("dragon_large.obj"),
             Transform::default(),
             Material::new(),
         )
@@ -602,7 +602,7 @@ impl Scene {
         ));
         scene
             .load_mesh(
-                Path::new("dragon.obj"),
+                Path::new("Dragon_80K.obj"),
                 Transform {
                     pos: Vec3::new(0.0, 1.2, 0.0),
                     rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),

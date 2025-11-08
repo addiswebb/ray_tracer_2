@@ -116,7 +116,7 @@ const SUN_FOCUS: f32 = 500.0;
 const epsilon: f32 = 1e-5;
 
 @compute
-@workgroup_size(16,16)
+@workgroup_size(8,8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var i: FragInput;
 
@@ -155,6 +155,24 @@ fn rand_unit_sphere(seed: ptr<function, u32>) -> vec3<f32> {
     return safe_normalize(vec3(x, y, z));
 }
 
+fn rand_hemisphere_cosine(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32> {
+    let r1 = rand(seed);
+    let r2 = rand(seed);
+
+    let phi = 2.0 * 3.1415926 * r1;
+    let z = sqrt(r2);  // Cosine distribution
+    let sin_theta = sqrt(1.0 - z * z);
+
+    let local_dir = vec3<f32>(cos(phi) * sin_theta, sin(phi) * sin_theta, z);
+
+    // Build orthonormal basis around normal
+    let up = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(1.0, 0.0, 0.0), abs(normal.z) > 0.999);
+    let tangent = normalize(cross(up, normal));
+    let bitangent = cross(normal, tangent);
+
+    return tangent * local_dir.x + bitangent * local_dir.y + normal * local_dir.z;
+}
+
 fn rand_normal_dist(seed: ptr<function, u32>) -> f32 {
     let theta = 2.0 * 3.1415926 * rand(seed);
     let rho = sqrt(-2.0 * log(rand(seed)));
@@ -168,22 +186,10 @@ fn next_random_number(seed: ptr<function,u32>) -> u32 {
     return result;
 }
 
-fn rand_hemisphere_dir_dist(normal: vec3<f32>, seed: ptr<function, u32>) -> vec3<f32> {
-    let dir = rand_unit_sphere(seed);
-    return dir * sign(dot(normal, dir));
-}
-
-fn rand_in_unit_disk(seed: ptr<function, u32>) -> vec3<f32> {
-    for (var i = 0; i < 1000; i += 1) {
-        let r1 = (rand(seed) * 2.0);
-        let r2 = (rand(seed) * 2.0);
-        let p = vec3<f32>(r1, r2, 1.0) - 1.0;
-        if length(p) <= 1.0 {
-            return p;
-        }
-        i -= 1;
-    }
-    return vec3<f32>(0.0, 0.0, 0.0);
+fn rand_in_unit_disk(seed: ptr<function, u32>) -> vec2<f32> {
+    let angle = rand(seed) * 2.0 * 3.1415926;
+    let point_on_circle = vec2<f32>(cos(angle), sin(angle));
+    return point_on_circle * sqrt(rand(seed));
 }
 
 fn reflectance(cosine: f32, refraction_ratio: f32) -> f32 {
@@ -281,10 +287,9 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
     var closest_hit: Hit;
     closest_hit.hit = false;
     closest_hit.dst = 1e30;
-    var stack: array<u32,64>;
-    var stack_index: u32 = 0u;
-    stack[stack_index] = 0u;
-    stack_index += 1u;
+    var stack: array<u32,32>;
+    stack[0u] = 0u;
+    var stack_index: u32 = 1u;
 
     while stack_index > 0u {
         stack_index -= 1u;
@@ -293,12 +298,11 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
         if node.count > 0u {
             (*stats)[1] += i32(node.count); // Track triangle checks
             for (var j: u32 = 0u; j < node.count; j += 1u) {
-                let tri_num = tri_idx[node.first + j];
-                let mesh_index = get_mesh(tri_num);
-
-                let index1 = indices[tri_num * 3u];
-                let index2 = indices[tri_num * 3u + 1u];
-                let index3 = indices[tri_num * 3u + 2u];
+                let tri_num = tri_idx[node.first + j] * 3u;
+                // let mesh_index = get_mesh(tri_num);
+                let index1 = indices[tri_num];
+                let index2 = indices[tri_num + 1u];
+                let index3 = indices[tri_num + 2u];
 
                 var v1 = vertices[index1];
                 var v2 = vertices[index2];
@@ -306,7 +310,15 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
                 let hit = ray_triangle(ray, v1, v2, v3);
                 if hit.hit && hit.dst < closest_hit.dst {
                     closest_hit = hit;
-                    closest_hit.material = meshes[mesh_index].material;
+                    // closest_hit.material = meshes[mesh_index].material;
+                    // closest_hit.material = meshes[0].material;
+                    let material_index = tri_num % 4u; // Cycle through 4 materials
+                    closest_hit.material.color = vec4<f32>(
+                        select(0.8, 0.2, material_index == 0u),
+                        select(0.8, 0.2, material_index == 1u),
+                        select(0.8, 0.2, material_index == 2u),
+                        1.0
+                    );
                 }
             }
         } else { // Otherwise its root node, push children onto the stack
@@ -330,21 +342,17 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
 }
 
 fn ray_aabb_dist(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32) -> f32 {
-    let tx1 = (b_min.x - ray.origin.x) * ray.inv_dir.x;
-    let tx2 = (b_max.x - ray.origin.x) * ray.inv_dir.x;
-    var tmin = min(tx1, tx2);
-    var tmax = max(tx1, tx2);
-    let ty1 = (b_min.y - ray.origin.y) * ray.inv_dir.y;
-    let ty2 = (b_max.y - ray.origin.y) * ray.inv_dir.y;
-    tmin = max(tmin, min(ty1, ty2));
-    tmax = min(tmax, max(ty1, ty2));
-    let tz1 = (b_min.z - ray.origin.z) * ray.inv_dir.z;
-    let tz2 = (b_max.z - ray.origin.z) * ray.inv_dir.z;
-    tmin = max(tmin, min(tz1, tz2));
-    tmax = min(tmax, max(tz1, tz2));
-    let did_hit = tmax >= tmin && tmin < t && tmax > 0.0;
+    let t1 = (b_min - ray.origin) * ray.inv_dir;
+    let t2 = (b_max - ray.origin) * ray.inv_dir;
+    var tmin = min(t1, t2);
+    var tmax = max(t1, t2);
+
+    let t_near = max(max(tmin.x, tmin.y), tmin.z);
+    let t_far = min(min(tmax.x, tmax.y), tmax.z);
+
+    let did_hit = t_far >= t_near && t_near < t && t_far > 0.0;
     if did_hit {
-        return tmin;
+        return t_near;
     } else {
         return 0x1.fffffep+127f;
     }
@@ -394,7 +402,8 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
                 let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
                 let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
                 let cannot_refract = refractive_index * sin_theta > 1.0;
-                let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
+                // let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
+                let diffuse_dir = normalize(rand_hemisphere_cosine(hit.normal, seed));
                 let reflect_dir = normalize(mix(diffuse_dir, reflect(unit_ray_dir, hit.normal), hit.material.specular));
                 let refract_dir = normalize(mix(diffuse_dir, refract(unit_ray_dir, hit.normal, refractive_index), hit.material.smoothness));
 
@@ -402,7 +411,8 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
 
                 ray.dir = select(refract_dir, reflect_dir, follow_reflect);
             } else {
-                let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
+                // let diffuse_dir = normalize(hit.normal + rand_unit_sphere(seed));
+                let diffuse_dir = normalize(rand_hemisphere_cosine(hit.normal, seed));
                 let specular_dir = reflect(unit_ray_dir, hit.normal);
                 ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
             }
