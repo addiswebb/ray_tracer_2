@@ -187,7 +187,10 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            ..Default::default()
+        });
         Self {
             instance,
             state: None,

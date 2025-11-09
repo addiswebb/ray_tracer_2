@@ -79,6 +79,8 @@ struct Ray {
     origin: vec3<f32>,
     dir: vec3<f32>,
     inv_dir: vec3<f32>,
+    transmittance: vec3<f32>,
+    bounces: u32,
 }
 
 struct Hit {
@@ -86,6 +88,7 @@ struct Hit {
     dst: f32,
     hit_point: vec3<f32>,
     normal: vec3<f32>,
+    backface: bool,
     material: Material,
 }
 
@@ -162,6 +165,14 @@ fn rand_normal_dist(seed: ptr<function, u32>) -> f32 {
     let theta = 2.0 * 3.1415926 * rand(seed);
     let rho = sqrt(-2.0 * log(rand(seed)));
     return rho * cos(theta);
+}
+
+fn rand_direction(seed: ptr<function,u32>) -> vec3<f32> {
+    let x = rand_normal_dist(seed);
+    let y = rand_normal_dist(seed);
+    let z = rand_normal_dist(seed);
+
+    return normalize(vec3(x, y, z));
 }
 
 fn next_random_number(seed: ptr<function,u32>) -> u32 {
@@ -243,8 +254,8 @@ fn ray_triangle(ray: Ray, tri: Triangle) -> Hit {
     let normal = cross(edge_ab, edge_ac);
     let ao = ray.origin - tri.v1;
     let dao = cross(ao, ray.dir);
-
     let determinant = -dot(ray.dir, normal);
+
     if abs(determinant) < 0.000001 {
         hit.hit = false;
         return hit;
@@ -260,6 +271,7 @@ fn ray_triangle(ray: Ray, tri: Triangle) -> Hit {
         hit.hit = true;
         hit.hit_point = ray.origin + ray.dir * dst;
         hit.normal = normalize(tri.n1 * w + tri.n2 * u + tri.n3 * v);
+        hit.backface = determinant < 0.0;
         hit.dst = dst;
     } else {
         hit.hit = false;
@@ -356,34 +368,39 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
     var _stats = vec2<i32>(0, 0);
     for (var i = 0; i <= params.number_of_bounces; i += 1) {
         var hit = calculate_ray_collions(ray, &_stats);
-        if hit.hit {
-            let is_specular_bounce = hit.material.specular >= rand(seed);
-            ray.origin = hit.hit_point;
-            let unit_ray_dir = normalize(ray.dir);
+        if !hit.hit {
+            // Use get_environment_light if skybox is enabled
+            if params.skybox != 0 {
+                incoming_light += get_environment_light(ray) * ray_color;
+            }
+            break;
+        }
+        ray.origin = hit.hit_point;
+        let unit_ray_dir = normalize(ray.dir);
             // Used for glass
-            if hit.material.ior > 0.0 {
-                var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
-                var refractive_index = hit.material.ior;
+        if hit.material.ior > 1.0 {
+            var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
+            var refractive_index = hit.material.ior;
                 // TODO, select(if false, if true, condition) i think this is backwards?
                 // refractive_index = select(1.0 / refractive_index, refractive_index, front_face);
-                refractive_index = select(refractive_index, 1.0 / refractive_index, front_face);
+            refractive_index = select(refractive_index, 1.0 / refractive_index, front_face);
 
-                let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
-                let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
-                let cannot_refract = refractive_index * sin_theta > 1.0;
-                let diffuse_dir = rand_hemisphere(hit.normal, seed);
-                let reflect_dir = normalize(mix(diffuse_dir, reflect(unit_ray_dir, hit.normal), hit.material.specular));
-                let refract_dir = normalize(mix(diffuse_dir, refract(unit_ray_dir, hit.normal, refractive_index), hit.material.smoothness));
+            let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
+            let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+            let cannot_refract = refractive_index * sin_theta > 1.0;
+            let diffuse_dir = rand_hemisphere(hit.normal, seed);
+            let reflect_dir = normalize(mix(diffuse_dir, reflect(unit_ray_dir, hit.normal), hit.material.specular));
+            let refract_dir = normalize(mix(diffuse_dir, refract(unit_ray_dir, hit.normal, refractive_index), hit.material.smoothness));
 
-                let follow_reflect = rand(seed) < reflectance(cos_theta, refractive_index);
+            let follow_reflect = rand(seed) < reflectance(cos_theta, refractive_index);
 
-                ray.dir = select(refract_dir, reflect_dir, follow_reflect);
-            } else {
-                let diffuse_dir = rand_hemisphere(hit.normal, seed);
-                let specular_dir = reflect(unit_ray_dir, hit.normal);
-                ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
-            }
-
+            ray.dir = select(refract_dir, reflect_dir, follow_reflect);
+            ray.origin = hit.hit_point + epsilon * hit.normal * sign(dot(hit.normal, ray.dir));
+        } else {
+            let is_specular_bounce = hit.material.specular >= rand(seed);
+            let diffuse_dir = rand_hemisphere(hit.normal, seed);
+            let specular_dir = reflect(unit_ray_dir, hit.normal);
+            ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
             let emitted_light = hit.material.emission_color * hit.material.emission_strength;
             incoming_light += emitted_light * ray_color;
             if is_specular_bounce {
@@ -391,18 +408,13 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
             } else {
                 ray_color *= hit.material.color;
             }
-            let p = max(ray_color.x, max(ray_color.y, ray_color.z));
-            if rand(seed) >= p {
-                break;
-            }
-            ray_color *= 1.0 / p;
-        } else {
-            // Use get_environment_light if skybox is enabled
-            if params.skybox != 0 {
-                incoming_light += get_environment_light(ray) * ray_color;
-            }
-            break;
         }
+
+        let p = max(ray_color.x, max(ray_color.y, ray_color.z));
+        if rand(seed) >= p {
+                break;
+        }
+        ray_color *= 1.0 / p;
         ray.inv_dir = 1.0 / ray.dir;
     }
 
