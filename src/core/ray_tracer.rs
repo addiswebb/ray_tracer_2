@@ -4,8 +4,8 @@ use egui_wgpu::wgpu::{self, PipelineCompilationOptions};
 
 use crate::core::{
     app::Params,
-    bvh::{BVH, Node},
-    mesh::{MeshUniform, Sphere, Vertex},
+    bvh::{BVH, Node, PackedTriangle},
+    mesh::{MeshUniform, Sphere},
     scene::{Scene, SceneUniform},
     texture::Texture,
 };
@@ -117,10 +117,10 @@ impl RayTracer {
             mapped_at_creation: false,
         });
 
-        let max_triangles = 280000;
+        let max_triangles = 200000;
         let triangle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Triangle Buffer"),
-            size: (max_triangles * std::mem::size_of::<Vertex>() as wgpu::BufferAddress),
+            size: (max_triangles * std::mem::size_of::<PackedTriangle>() as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
@@ -209,14 +209,18 @@ impl RayTracer {
         queue.write_buffer(
             &self.triangle_buffer,
             0,
-            bytemuck::cast_slice(&scene.bvh.packed_triangles),
+            bytemuck::cast_slice(&scene.bvh_data.triangles),
         );
         queue.write_buffer(&self.sphere_buffer, 0, bytemuck::cast_slice(&scene.spheres));
-        queue.write_buffer(&self.mesh_buffer, 0, bytemuck::cast_slice(&scene.meshes()));
+        queue.write_buffer(
+            &self.mesh_buffer,
+            0,
+            bytemuck::cast_slice(&scene.bvh_data.mesh_uniforms),
+        );
         queue.write_buffer(
             &self.bvh_nodes_buffer,
             0,
-            bytemuck::cast_slice(&scene.bvh(&scene.meshes())),
+            bytemuck::cast_slice(&scene.bvh()),
         );
         queue.write_buffer(
             &self.scene_buffer,

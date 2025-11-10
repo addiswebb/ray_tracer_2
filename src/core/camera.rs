@@ -16,22 +16,19 @@ const SAFE_FRAC_PI_2_DEG: f32 = SAFE_FRAC_PI_2 * (180.0 / std::f32::consts::PI);
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct CameraUniform {
     pub origin: [f32; 3],
-    _padding1: f32,
-    pub lower_left_corner: [f32; 3],
-    _padding2: f32,
-    pub horizontal: [f32; 3],
-    _padding3: f32,
-    pub vertical: [f32; 3],
-    _padding4: f32,
-    pub near: f32,
-    pub far: f32,
-    _padding5: [f32; 2],
-    pub w: [f32; 3],
-    _padding6: f32,
-    pub u: [f32; 3],
-    _padding7: f32,
-    pub v: [f32; 3],
     pub lens_radius: f32,
+    pub lower_left_corner: [f32; 3],
+    pub near: f32,
+    pub horizontal: [f32; 3],
+    pub far: f32,
+    pub vertical: [f32; 3],
+    _p1: f32,
+    pub w: [f32; 3],
+    _p2: f32,
+    pub u: [f32; 3],
+    _p3: f32,
+    pub v: [f32; 3],
+    _p4: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -91,22 +88,19 @@ impl Camera {
 
         CameraUniform {
             origin: self.origin.to_array(),
-            _padding1: 0.0,
             lower_left_corner: lower_left_corner.to_array(),
-            _padding2: 0.0,
             horizontal: horizontal.to_array(),
-            _padding3: 0.0,
             vertical: vertical.to_array(),
-            _padding4: 0.0,
-            near: self.near,
-            far: self.far,
-            _padding5: [0.0; 2],
             w: w.to_array(),
-            _padding6: 0.0,
             u: u.to_array(),
-            _padding7: 0.0,
             v: v.to_array(),
             lens_radius: self.aperture / 2.0,
+            near: self.near,
+            far: self.far,
+            _p1: 0.0,
+            _p2: 0.0,
+            _p3: 0.0,
+            _p4: 0.0,
         }
     }
     pub fn update_camera(&mut self, dt: Duration) {

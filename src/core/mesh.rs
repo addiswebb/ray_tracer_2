@@ -1,37 +1,29 @@
 use glam::{Mat4, Quat, Vec3};
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct Vertex {
-    pub pos: [f32; 3],
-    pub _padding1: f32,
-    pub normal: [f32; 3],
-    pub _padding2: f32,
+    pub pos: Vec3,
+    pub normal: Vec3,
 }
 
 impl Vertex {
     pub fn new(pos: Vec3, normal: Vec3) -> Self {
-        Self {
-            pos: pos.to_array(),
-            _padding1: 0.0,
-            normal: normal.to_array(),
-            _padding2: 0.0,
-        }
+        Self { pos, normal }
     }
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Sphere {
-    pub position: [f32; 3],
+    pub pos: [f32; 3],
     pub radius: f32,
     pub material: Material,
 }
 
 impl Sphere {
-    pub fn new(position: Vec3, radius: f32, material: Material) -> Self {
+    pub fn new(pos: Vec3, radius: f32, material: Material) -> Self {
         Self {
-            position: position.to_array(),
+            pos: pos.to_array(),
             radius,
             material,
         }
@@ -44,10 +36,14 @@ pub struct Material {
     pub color: [f32; 4],
     pub emission_color: [f32; 4],
     pub specular_color: [f32; 4],
+    pub absorption: [f32; 4],
+    pub absorption_stength: f32,
     pub emission_strength: f32,
     pub smoothness: f32,
     pub specular: f32,
     pub ior: f32,
+    pub flag: i32,
+    pub _p1: [f32; 2],
 }
 
 impl Material {
@@ -56,10 +52,14 @@ impl Material {
             color: [1.0, 1.0, 1.0, 1.0],
             emission_color: [1.0, 1.0, 1.0, 1.0],
             specular_color: [1.0, 1.0, 1.0, 1.0],
+            absorption: [0.0, 0.0, 0.0, 0.0],
+            absorption_stength: 0.0,
             emission_strength: 0.0,
             smoothness: 0.0,
             specular: 0.1,
             ior: 0.0,
+            flag: 0,
+            _p1: [0.0; 2],
         }
     }
     pub fn color(&mut self, color: [f32; 4]) -> Self {
@@ -76,6 +76,7 @@ impl Material {
     #[allow(unused)]
     pub fn glass(&mut self, index_of_refraction: f32) -> Self {
         self.ior = index_of_refraction;
+        self.flag = 1;
         self.smoothness = 1.0;
         *self
     }
@@ -133,11 +134,11 @@ impl Mesh {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct MeshUniform {
-    pub first: u32,
+    pub world_to_model: [[f32; 4]; 4],
+    pub model_to_world: [[f32; 4]; 4],
+    pub node_offset: u32,
     pub triangles: u32,
-    pub offset: u32,
-    pub _padding: f32,
-    pub pos: [f32; 3],
-    pub _padding2: f32,
+    pub triangle_offset: u32,
+    pub _p1: f32,
     pub material: Material,
 }

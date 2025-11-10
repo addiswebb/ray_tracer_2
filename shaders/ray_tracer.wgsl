@@ -1,3 +1,6 @@
+const INF: f32 = 0x1p+127f;  // Hexadecimal float literal
+const MATERIAL_GLASS: i32 = 1;
+
 struct Params {
     width: u32,
     height: u32,
@@ -9,14 +12,18 @@ struct Params {
     debug_flag: i32,
     debug_scale: i32,
 }
+
 struct Material {
     color: vec4<f32>,
     emission_color: vec4<f32>,
     specular_color: vec4<f32>,
+    absorption: vec4<f32>,
+    absorption_strength: f32,
     emission_strength: f32,
     smoothness: f32,
     specular: f32,
     ior: f32,
+    flag: i32,
 }
 
 struct Sphere {
@@ -25,17 +32,26 @@ struct Sphere {
     material: Material,
 }
 
-struct Vertex {
-    pos: vec3<f32>,
-    normal: vec3<f32>
+struct Mesh {
+    world_to_model: mat4x4<f32>,
+    model_to_world: mat4x4<f32>,
+    node_offset: u32,
+    triangles: u32,
+    triangle_offset: u32,
+    material: Material,
 }
 
-struct Mesh {
-    first: u32,
-    triangles: u32,
-    offset: u32,
-    pos: vec3<f32>,
-    material: Material,
+struct Camera {
+    origin: vec3<f32>,
+    lens_radius: f32,
+    lower_left_corner: vec3<f32>,
+    near: f32,
+    horizontal: vec3<f32>,
+    far: f32,
+    vertical: vec3<f32>,
+    w: vec3<f32>,
+    u: vec3<f32>,
+    v: vec3<f32>,
 }
 struct Scene {
     spheres: u32,
@@ -47,27 +63,21 @@ struct Scene {
 }
 
 struct BVHNode {
-    aabb_min: vec3<f32>,
-    pad0: f32,
-    aabb_max: vec3<f32>,
-    pad1: f32,
     left: u32,
     right: u32,
     first: u32,
     count: u32,
+    aabb_min: vec3<f32>,
+    aabb_max: vec3<f32>,
 }
 
-struct Camera {
-    origin: vec3<f32>,
-    lower_left_corner: vec3<f32>,
-    horizontal: vec3<f32>,
-    vertical: vec3<f32>,
-    near: f32,
-    far: f32,
-    w: vec3<f32>,
-    u: vec3<f32>,
-    v: vec3<f32>,
-    lens_radius: f32,
+struct Triangle {
+    v1: vec3<f32>,
+    v2: vec3<f32>,
+    v3: vec3<f32>,
+    n1: vec3<f32>,
+    n2: vec3<f32>,
+    n3: vec3<f32>,
 }
 
 struct FragInput {
@@ -79,7 +89,7 @@ struct Ray {
     origin: vec3<f32>,
     dir: vec3<f32>,
     inv_dir: vec3<f32>,
-    transmittance: vec3<f32>,
+    transmittance: vec4<f32>,
     bounces: u32,
 }
 
@@ -90,16 +100,6 @@ struct Hit {
     normal: vec3<f32>,
     backface: bool,
     material: Material,
-}
-
-struct Triangle {
-    v1: vec3<f32>,
-    v2: vec3<f32>,
-    v3: vec3<f32>,
-    n1: vec3<f32>,
-    n2: vec3<f32>,
-    n3: vec3<f32>,
-    mesh_index: u32,
 }
 
 @group(0) @binding(0)
@@ -188,18 +188,66 @@ fn rand_in_unit_disk(seed: ptr<function, u32>) -> vec2<f32> {
     return point_on_circle * sqrt(rand(seed));
 }
 
-fn reflectance(cosine: f32, refraction_ratio: f32) -> f32 {
-    var r0 = (1.0 - refraction_ratio) / (1.0 + refraction_ratio);
-    r0 = r0 * r0;
-    return r0 + (1.0 - r0) * pow((1.0 - cosine), 5.0);
+fn reflectance(incident: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> f32 {
+    let cos_theta = dot(-incident, normal);
+    let r0 = pow((ior_a - ior_b) / (ior_a + ior_b), 2.0);
+    return r0 + (1.0 - r0) * pow(1.0 - cos_theta, 5.0);
+}
+// fn reflectance(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> f32 {
+//     let refract_ratio = ior_a / ior_b;
+//     let cos_angle_in = -dot(uv, normal);
+//     let sin_sqr_angle_or = refract_ratio * refract_ratio * (1.0 - cos_angle_in * cos_angle_in);
+//     if sin_sqr_angle_or >= 1.0 {
+//         return 1.0;
+//     }
+
+//     let cos_angle_or = sqrt(1.0 - sin_sqr_angle_or);
+//     let denominator_perp = ior_a * cos_angle_in + ior_b * cos_angle_or;
+//     let denominator_parallel = ior_b * cos_angle_in + ior_a * cos_angle_or;
+//     if abs(denominator_perp) < 1e-8 || abs(denominator_parallel) < 1e-8 {
+//         return 1.0;
+//     }
+
+//     var r_perp = (ior_a * cos_angle_in - ior_b * cos_angle_or) / denominator_perp;
+//     r_perp *= r_perp;
+//     var r_parallel = (ior_b * cos_angle_in - ior_a * cos_angle_or) / denominator_parallel;
+//     r_parallel *= r_parallel;
+//     return (r_perp + r_parallel) * 0.5;
+// }
+
+// fn refract(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> vec3<f32> {
+//     let refraction_ratio = ior_a / ior_b;
+//     let cos_theta = min(dot(-uv, normal), 1.0);
+//     let r_out_perp = refraction_ratio * (uv + cos_theta * normal);
+//     let r_out_parallel = -sqrt(abs(1.0 - dot(r_out_perp, r_out_perp))) * normal;
+//     return r_out_perp + r_out_parallel;
+// }
+
+fn refract(incident: vec3<f32>, normal: vec3<f32>, ior_in: f32, ior_out: f32) -> vec3<f32> {
+    let eta = ior_in / ior_out;
+    let cosi = clamp(dot(-incident, normal), -1.0, 1.0);
+    let n = normal;
+    let k = 1.0 - eta * eta * (1.0 - cosi * cosi);
+
+    if k < 0.0 {
+        // Total internal reflection
+        return reflect(incident, normal);
+    } else {
+        // Correct perpendicular + parallel decomposition
+        return normalize(eta * incident + (eta * cosi - sqrt(k)) * n);
+    }
 }
 
-fn refract(uv: vec3<f32>, normal: vec3<f32>, refraction_ratio: f32) -> vec3<f32> {
-    let cos_theta = min(dot(-uv, normal), 1.0);
-    let r_out_perp = refraction_ratio * (uv + cos_theta * normal);
-    let r_out_parallel = -sqrt(abs(1.0 - length(r_out_perp))) * normal;
-    return r_out_perp + r_out_parallel;
-}
+
+// fn refract(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> vec3<f32> {
+//     let refract_ratio = ior_a / ior_b;
+//     let cos_angle_in = -dot(uv, normal);
+//     let sin_sqr_angle_or = refract_ratio * refract_ratio * (1.0 - cos_angle_in * cos_angle_in);
+//     if sin_sqr_angle_or > 1.0 {
+//         return vec3<f32>(0.0);
+//     }
+//     return refract_ratio * uv + (refract_ratio * cos_angle_in - sqrt(1.0 - sin_sqr_angle_or)) * normal;
+// }
 
 fn get_environment_light(ray: Ray) -> vec4<f32> {
     let sky_gradient_t = pow(smoothstep(0.0, 0.4, ray.dir.y), 0.35);
@@ -210,45 +258,49 @@ fn get_environment_light(ray: Ray) -> vec4<f32> {
     return composite;
 }
 
-fn get_mesh(triangle_index: u32) -> i32 {
-    var mesh_index = -1;
-    for (var m: u32 = 0u; m < scene.meshes; m += 1u) {
-        let mesh: Mesh = meshes[m];
-        let first_tri_index = mesh.first / 3u;
-        if triangle_index >= first_tri_index && triangle_index < first_tri_index + mesh.triangles {
-            mesh_index = i32(m);
-            break;
-        }
-    }
-    return mesh_index;
-}
-
-fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32) -> Hit {
+fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32, cull_backface: bool) -> Hit {
     var hit: Hit;
-    hit.hit = false;
-    let offest_ray_origin = ray.origin - centre;
-    // ax^2+bx+c=0
-    // Represents a quadratic from sqrt(ray.origin + ray.dir * ray.dst) = radius^2
+    hit.dst = INF;
+
+    let offset_ray_origin = ray.origin - centre;
+
     let a = dot(ray.dir, ray.dir);
-    let b = 2.0 * dot(offest_ray_origin, ray.dir);
-    let c = dot(offest_ray_origin, offest_ray_origin) - pow(radius, 2.0);
+    let b = 2.0 * dot(offset_ray_origin, ray.dir);
+    let c = dot(offset_ray_origin, offset_ray_origin) - radius * radius;
+
     let discriminant = b * b - 4.0 * a * c;
-    // No solution to quadratic
+
     if discriminant >= 0.0 {
-        // Solve quadratic for distance
-        let dst = (-b - sqrt(discriminant)) / (2.0 * a);
-        if dst >= epsilon {
-            hit.hit = true;
-            hit.hit_point = ray.origin + ray.dir * dst;
-            hit.dst = dst;
-            hit.normal = normalize(hit.hit_point - centre);
+        let s = sqrt(discriminant);
+
+        let dst_near = max(0.0, (-b - s) / (2.0 * a));
+        let dst_far = (-b + s) / (2.0 * a);
+
+        if dst_far >= 0.0 {
+            let is_inside = dst_near == 0.0;
+            if is_inside {
+                hit.hit = true;
+                hit.dst = dst_far;
+            } else {
+                hit.hit = true;
+                hit.dst = dst_near;
+            }
+            hit.hit_point = ray.origin + ray.dir * hit.dst;
+            if is_inside {
+                hit.normal = -normalize(hit.hit_point - centre);
+            } else {
+                hit.normal = normalize(hit.hit_point - centre);
+            }
+            hit.backface = is_inside;
         }
     }
+
     return hit;
 }
 
-fn ray_triangle(ray: Ray, tri: Triangle) -> Hit {
+fn ray_triangle(ray: Ray, tri: Triangle, cull_backface: bool) -> Hit {
     var hit: Hit;
+    hit.hit = false;
     let edge_ab = tri.v2 - tri.v1;
     let edge_ac = tri.v3 - tri.v1;
     let normal = cross(edge_ab, edge_ac);
@@ -256,8 +308,14 @@ fn ray_triangle(ray: Ray, tri: Triangle) -> Hit {
     let dao = cross(ao, ray.dir);
     let determinant = -dot(ray.dir, normal);
 
-    if abs(determinant) < 0.000001 {
-        hit.hit = false;
+    var keep: bool;
+    if cull_backface {
+        keep = determinant >= 1e-8;
+    } else {
+        keep = abs(determinant) >= 1e-8;
+    }
+
+    if !keep {
         return hit;
     }
     let inverse_determinant = 1.0 / determinant;
@@ -269,24 +327,24 @@ fn ray_triangle(ray: Ray, tri: Triangle) -> Hit {
 
     if dst > epsilon && u >= 0.0 && v >= 0.0 && w >= 0.0 {
         hit.hit = true;
-        hit.hit_point = ray.origin + ray.dir * dst;
-        hit.normal = normalize(tri.n1 * w + tri.n2 * u + tri.n3 * v);
+        hit.normal = normalize(tri.n1 * w + tri.n2 * u + tri.n3 * v) * sign(determinant);
         hit.backface = determinant < 0.0;
+        hit.hit_point = ray.origin + ray.dir * dst;
         hit.dst = dst;
-    } else {
-        hit.hit = false;
     }
 
     return hit;
 }
 
-fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
+fn ray_BVH(ray: Ray, ray_length: f32, node_offset: u32, tri_offset: u32, cull_backface: bool, stats: ptr<function, vec2<i32>>) -> Hit {
     var closest_hit: Hit;
     closest_hit.hit = false;
-    closest_hit.dst = 1e30;
+    closest_hit.dst = ray_length;
+
     var stack: array<u32,32>;
-    stack[0u] = 0u;
-    var stack_index: u32 = 1u;
+    var stack_index: u32 = 0u;
+    stack[stack_index] = node_offset + 0u;
+    stack_index += 1u;
 
     while stack_index > 0u {
         stack_index -= 1u;
@@ -295,25 +353,26 @@ fn ray_BVH(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
         if node.count > 0u {
             (*stats)[1] += i32(node.count); // Track triangle checks
             for (var j: u32 = 0u; j < node.count; j += 1u) {
-                let tri = triangles[node.first + j];
-                let hit = ray_triangle(ray, tri);
+                let tri = triangles[tri_offset + node.first + j];
+                let hit = ray_triangle(ray, tri, cull_backface);
                 if hit.hit && hit.dst < closest_hit.dst {
                     closest_hit = hit;
-                    closest_hit.material = meshes[tri.mesh_index].material;
                 }
             }
         } else { // Otherwise its root node, push children onto the stack
-            let left_node = nodes[node.left];
-            let right_node = nodes[node.right];
-            let left_dst = ray_aabb_dist(ray, left_node.aabb_min, left_node.aabb_max, closest_hit.dst);
-            let right_dst = ray_aabb_dist(ray, right_node.aabb_min, right_node.aabb_max, closest_hit.dst);
+            let child_index_a = node_offset + node.left;
+            let child_index_b = node_offset + node.right;
+            let child_a = nodes[child_index_a];
+            let child_b = nodes[child_index_b];
+            let dst_a = ray_aabb_dist(ray, child_a.aabb_min, child_a.aabb_max, closest_hit.dst);
+            let dst_b = ray_aabb_dist(ray, child_b.aabb_min, child_b.aabb_max, closest_hit.dst);
             (*stats)[0] += 2; // Track bounding box checks
             // Use index math to simplify code here:
-            let left_is_closer = left_dst < right_dst;
-            let near_dst = select(right_dst, left_dst, left_is_closer);
-            let far_dst = select(right_dst, left_dst, !left_is_closer);
-            let near_idx = select(node.right, node.left, left_is_closer);
-            let far_idx = select(node.right, node.left, !left_is_closer);
+            let left_is_closer = dst_a < dst_b;
+            let near_dst = select(dst_b, dst_a, left_is_closer);
+            let far_dst = select(dst_b, dst_a, !left_is_closer);
+            let near_idx = select(child_index_b, child_index_a, left_is_closer);
+            let far_idx = select(child_index_b, child_index_a, !left_is_closer);
             // Push farthest child first, (last on first off, last child gets checked first)
             if far_dst < closest_hit.dst { stack[stack_index] = far_idx; stack_index += 1u; }
             if near_dst < closest_hit.dst { stack[stack_index] = near_idx; stack_index += 1u; }
@@ -335,26 +394,48 @@ fn ray_aabb_dist(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32) -> f32 {
     if did_hit {
         return t_near;
     } else {
-        return 0x1.fffffep+127f;
+        return INF;
     }
 }
 
 fn calculate_ray_collions(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
     var closest_hit: Hit;
     closest_hit.hit = false;
-    closest_hit.dst = 0x1.fffffep+127f;
-
+    closest_hit.dst = INF;
     for (var i: u32 = 0u; i < scene.spheres; i += 1u) {
-        let hit: Hit = ray_sphere(ray, spheres[i].position, spheres[i].radius);
+        var cull_backface = spheres[i].material.flag != MATERIAL_GLASS;
+        let hit: Hit = ray_sphere(ray, spheres[i].position, spheres[i].radius, cull_backface);
         if hit.hit && hit.dst < closest_hit.dst {
             closest_hit = hit;
             closest_hit.material = spheres[i].material;
         }
     }
-    if scene.n_nodes > 0u {
-        let hit: Hit = ray_BVH(ray, stats);
-        if hit.hit && hit.dst < closest_hit.dst {
-            closest_hit = hit;
+    var local_ray: Ray;
+    local_ray.transmittance = vec4<f32>(0.0);
+    local_ray.bounces = 0u;
+
+    for (var i: u32 = 0u; i < scene.meshes; i += 1u) {
+        let mesh = meshes[i];
+        local_ray.origin = (mesh.world_to_model * vec4<f32>(ray.origin, 1.0)).xyz;
+        local_ray.dir = normalize((mesh.world_to_model * vec4<f32>(ray.dir, 0.0)).xyz);
+        local_ray.inv_dir = 1.0 / local_ray.dir;
+        // Transform using matrices here instead of cpu, do later...
+        var cull_backface = mesh.material.flag != MATERIAL_GLASS;
+
+        let hit: Hit = ray_BVH(local_ray, INF, mesh.node_offset, mesh.triangle_offset, cull_backface, stats);
+        if hit.hit {
+            let local_hit_point = local_ray.origin + local_ray.dir * hit.dst;
+            let world_hit_point = (mesh.model_to_world * vec4<f32>(local_hit_point, 1.0)).xyz;
+            let world_dst = distance(ray.origin, world_hit_point);
+
+            if world_dst < closest_hit.dst {
+                closest_hit.hit = true;
+                closest_hit.backface = hit.backface;
+                closest_hit.normal = normalize((mesh.model_to_world * vec4<f32>(hit.normal, 0.0)).xyz);
+                closest_hit.hit_point = world_hit_point;
+                closest_hit.dst = world_dst;
+                closest_hit.material = mesh.material;
+            }
         }
     }
 
@@ -363,58 +444,64 @@ fn calculate_ray_collions(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
 
 fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
     var ray: Ray = incident_ray;
-    var ray_color = vec4<f32>(1.0);
+    ray.dir = normalize(ray.dir);
+    ray.transmittance = vec4<f32>(1.0);
     var incoming_light = vec4<f32>(0.0);
     var _stats = vec2<i32>(0, 0);
-    for (var i = 0; i <= params.number_of_bounces; i += 1) {
+    for (var i = i32(ray.bounces); i <= params.number_of_bounces; i += 1) {
         var hit = calculate_ray_collions(ray, &_stats);
         if !hit.hit {
             // Use get_environment_light if skybox is enabled
             if params.skybox != 0 {
-                incoming_light += get_environment_light(ray) * ray_color;
+                incoming_light += ray.transmittance * get_environment_light(ray);
             }
             break;
         }
         ray.origin = hit.hit_point;
-        let unit_ray_dir = normalize(ray.dir);
-            // Used for glass
-        if hit.material.ior > 1.0 {
-            var front_face = dot(unit_ray_dir, hit.normal) < 0.0;
-            var refractive_index = hit.material.ior;
-                // TODO, select(if false, if true, condition) i think this is backwards?
-                // refractive_index = select(1.0 / refractive_index, refractive_index, front_face);
-            refractive_index = select(refractive_index, 1.0 / refractive_index, front_face);
+        if hit.material.flag == MATERIAL_GLASS {
+            if hit.backface {
+                let x = ray.transmittance.rgb * exp(-hit.dst * hit.material.absorption.rgb * hit.material.absorption_strength);
+                ray.transmittance = vec4(x.r, x.g, x.b, 1.0);
+            }
 
-            let cos_theta = clamp(dot(-unit_ray_dir, hit.normal), -1.0, 1.0);
-            let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
-            let cannot_refract = refractive_index * sin_theta > 1.0;
-            let diffuse_dir = rand_hemisphere(hit.normal, seed);
-            let reflect_dir = normalize(mix(diffuse_dir, reflect(unit_ray_dir, hit.normal), hit.material.specular));
-            let refract_dir = normalize(mix(diffuse_dir, refract(unit_ray_dir, hit.normal, refractive_index), hit.material.smoothness));
+            let ior_current = select(1.0, hit.material.ior, !hit.backface);
+            let ior_next = select(hit.material.ior, 1.0, !hit.backface);
 
-            let follow_reflect = rand(seed) < reflectance(cos_theta, refractive_index);
+            var reflect_dir = reflect(ray.dir, hit.normal);
+            var refract_dir = refract(ray.dir, hit.normal, ior_current, ior_next);
 
-            ray.dir = select(refract_dir, reflect_dir, follow_reflect);
-            ray.origin = hit.hit_point + epsilon * hit.normal * sign(dot(hit.normal, ray.dir));
+            // let reflect_weight = reflectance(ray.dir, hit.normal, ior_current, ior_next);
+            // let refract_weight = 1.0 - reflect_weight;
+
+            // let diffuse_dir = normalize(hit.normal + rand_direction(seed));
+
+            // reflect_dir = normalize(mix(diffuse_dir, reflect_dir, hit.material.specular));
+            // refract_dir = normalize(mix(-diffuse_dir, refract_dir, hit.material.smoothness));
+
+            // let follow_reflection = rand(seed) <= reflect_weight;
+            // ray.dir = select(refract_dir, reflect_dir, follow_reflection);
+            ray.dir = normalize(refract_dir);
+            let eps = max(1e-5, 1e-3 * hit.dst);
+            ray.origin = hit.hit_point + eps * hit.normal * sign(dot(hit.normal, ray.dir));
         } else {
             let is_specular_bounce = hit.material.specular >= rand(seed);
             let diffuse_dir = rand_hemisphere(hit.normal, seed);
-            let specular_dir = reflect(unit_ray_dir, hit.normal);
-            ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
+            let specular_dir = reflect(ray.dir, hit.normal);
             let emitted_light = hit.material.emission_color * hit.material.emission_strength;
-            incoming_light += emitted_light * ray_color;
+            ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
+            incoming_light += emitted_light * ray.transmittance;
             if is_specular_bounce {
-                ray_color *= hit.material.specular_color;
+                ray.transmittance *= hit.material.specular_color;
             } else {
-                ray_color *= hit.material.color;
+                ray.transmittance *= hit.material.color;
             }
         }
 
-        let p = max(ray_color.x, max(ray_color.y, ray_color.z));
+        let p = max(ray.transmittance.r, max(ray.transmittance.g, ray.transmittance.b));
         if rand(seed) >= p {
                 break;
         }
-        ray_color *= 1.0 / p;
+        ray.transmittance *= 1.0 / p;
         ray.inv_dir = 1.0 / ray.dir;
     }
 
@@ -437,7 +524,7 @@ fn frag(i: FragInput) -> vec4<f32> {
 
         var ray: Ray;
         ray.origin = scene.camera.origin + offset;
-        ray.dir = scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin;
+        ray.dir = normalize(scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin);
         ray.inv_dir = 1.0 / ray.dir;
 
         total_incoming_light += trace(ray, &rng_state);
@@ -451,7 +538,7 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
     var ray: Ray;
     let pos = i.pos / i.size;
     ray.origin = scene.camera.origin ;
-    ray.dir = scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin;
+    ray.dir = normalize(scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin);
     ray.inv_dir = 1.0 / ray.dir;
     let hit: Hit = calculate_ray_collions(ray, &stats);
     switch params.debug_flag{

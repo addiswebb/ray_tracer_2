@@ -17,7 +17,7 @@ use winit::{
 };
 
 use crate::core::{
-    bvh::{self, BVH},
+    bvh::{self},
     egui::EguiRenderer,
     ray_tracer::RayTracer,
     renderer::Renderer,
@@ -36,7 +36,8 @@ pub struct Params {
     frames: i32,
     accumulate: i32,
     debug_flag: i32,
-    depth_threshhold: i32,
+    debug_scale: i32,
+    _p1: [f32; 3],
 }
 #[allow(unused)]
 pub struct AppState {
@@ -119,7 +120,8 @@ impl AppState {
             frames: 0,
             accumulate: 1,
             debug_flag: 0,
-            depth_threshhold: 10,
+            debug_scale: 10,
+            _p1: [0.0; 3],
         };
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Param buffer"),
@@ -449,9 +451,9 @@ impl App {
                             let s = &mut state.scene.spheres[state.selected_entity as usize];
                             ui.heading("Sphere");
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut s.position[0]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut s.position[1]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut s.position[2]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.pos[0]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.pos[1]).speed(0.01));
+                                ui.add(egui::DragValue::new(&mut s.pos[2]).speed(0.01));
                                 ui.label(format!("Position"));
                             });
                             ui.horizontal(|ui| {
@@ -528,6 +530,10 @@ impl App {
                             ui.horizontal(|ui| {
                                 ui.add(egui::DragValue::new(&mut s.material.ior).speed(0.01));
                                 ui.label(format!("Refractive Index"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut s.material.flag).speed(1));
+                                ui.label(format!("Flag"));
                             });
                         } else {
                             let m = &mut state.scene.meshes
@@ -640,6 +646,10 @@ impl App {
                                 ui.add(egui::DragValue::new(&mut m.material.ior).speed(0.01));
                                 ui.label(format!("Refractive Index"));
                             });
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut m.material.flag).speed(1));
+                                ui.label(format!("Flag"));
+                            });
                         }
                     }
                     ui.separator();
@@ -659,41 +669,34 @@ impl App {
                     ui.label(format!("Avg Frame Time: {:#?}", state.average_frame_time));
                     ui.separator();
                     ui.heading("BVH");
-                    ui.label(format!("Nodes: {}", state.scene.bvh.n_nodes));
-                    ui.label(format!("Triangles: {}", state.scene.bvh.triangles.len()));
+                    ui.label(format!("Nodes: {}", state.scene.bvh_data.nodes.len()));
                     ui.label(format!(
-                        "Triangle Indices: {}",
-                        state.scene.bvh.triangle_indices.len()
+                        "Triangle: {}",
+                        state.scene.bvh_data.triangles.len()
                     ));
 
                     egui::ComboBox::from_label("Quality")
-                        .selected_text(format!("{:?}", state.scene.bvh.quality))
+                        .selected_text(format!("{:?}", state.scene.bvh_quality))
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
-                                &mut state.scene.bvh.quality,
+                                &mut state.scene.bvh_quality,
                                 bvh::Quality::High,
                                 "High",
                             );
                             ui.selectable_value(
-                                &mut state.scene.bvh.quality,
+                                &mut state.scene.bvh_quality,
                                 bvh::Quality::Low,
                                 "Low",
                             );
                             ui.selectable_value(
-                                &mut state.scene.bvh.quality,
+                                &mut state.scene.bvh_quality,
                                 bvh::Quality::Disabled,
                                 "Disabled",
                             );
                         });
 
                     if ui.button("Rebuild BVH").clicked() {
-                        let (vertices, indices) = state.scene.vertices_and_indices();
-                        state.scene.bvh = BVH::build(
-                            &state.scene.meshes(),
-                            vertices,
-                            indices,
-                            state.scene.bvh.quality,
-                        );
+                        state.scene.built_bvh = false;
                         state.params.frames = -1;
                         state.average_frame_time = Duration::ZERO;
                     }
@@ -720,7 +723,7 @@ impl App {
                         );
                     });
                     ui.add(
-                        egui::Slider::new(&mut params.depth_threshhold, 1..=1000)
+                        egui::Slider::new(&mut params.debug_scale, 1..=1000)
                             .text("Depth Threshold"),
                     );
                     ui.separator();

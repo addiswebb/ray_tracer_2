@@ -9,7 +9,7 @@ use glam::{Quat, Vec3, Vec4};
 use rand::Rng;
 
 use crate::core::{
-    bvh::{self, BVH, Node},
+    bvh::{self, BVH, MeshDataList, Node, Quality},
     camera::{CameraDescriptor, CameraUniform},
     mesh::{Material, Mesh, MeshUniform, Sphere, Transform, Vertex},
 };
@@ -20,7 +20,9 @@ pub struct Scene {
     pub camera: Camera,
     pub spheres: Vec<Sphere>,
     pub meshes: Vec<Mesh>,
-    pub bvh: BVH,
+    pub bvh_data: MeshDataList,
+    pub bvh_quality: Quality,
+    pub built_bvh: bool,
 }
 
 #[repr(C)]
@@ -54,15 +56,17 @@ impl Scene {
             camera,
             spheres: vec![],
             meshes: vec![],
-            bvh: BVH::empty(),
+            bvh_data: MeshDataList::default(),
+            bvh_quality: Quality::default(),
+            built_bvh: false,
         }
     }
-    pub fn bvh(&mut self, meshes: &Vec<MeshUniform>) -> &Vec<Node> {
-        if self.bvh.n_nodes == 0 && self.meshes.len() > 0 {
-            let (vertices, indices) = self.vertices_and_indices();
-            self.bvh = BVH::build(meshes, vertices, indices, bvh::Quality::High);
+    pub fn bvh(&mut self) -> &Vec<Node> {
+        if !self.built_bvh && self.meshes.len() > 0 {
+            self.bvh_data = BVH::build_per_mesh(&self.meshes, bvh::Quality::High);
+            self.built_bvh = true;
         }
-        &self.bvh.nodes
+        &self.bvh_data.nodes
     }
     pub fn set_camera(&mut self, camera_descriptor: &CameraDescriptor) {
         self.camera = Camera::new(camera_descriptor);
@@ -94,33 +98,13 @@ impl Scene {
                 let p = mesh.transform.to_matrix()
                     * Vec4::from_array([v.pos[0], v.pos[1], v.pos[2], 1.0]);
                 vertices.push(Vertex {
-                    pos: [p[0], p[1], p[2]],
-                    _padding1: 0.0,
+                    pos: Vec3::from_array([p[0], p[1], p[2]]),
                     normal: v.normal,
-                    _padding2: 0.0,
                 });
             }
             indices.extend(mesh.indices.iter().map(|i| i + vertex_offset));
         }
         (vertices, indices)
-    }
-
-    pub fn meshes(&self) -> Vec<MeshUniform> {
-        let mut meshes: Vec<MeshUniform> = Vec::with_capacity(self.meshes.len());
-        let mut first = 0;
-        for mesh in &self.meshes {
-            meshes.push(MeshUniform {
-                first,
-                triangles: (mesh.indices.len() / 3) as u32,
-                offset: 0,
-                _padding: 0.0,
-                pos: [0.0, 0.0, 0.0],
-                _padding2: 0.0,
-                material: mesh.material,
-            });
-            first += mesh.indices.len() as u32;
-        }
-        meshes
     }
 
     pub async fn obj_test(config: &wgpu::SurfaceConfiguration) -> Self {
@@ -438,7 +422,6 @@ impl Scene {
         // scene.meshes = vec![];
         scene
     }
-
     pub async fn dragon(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {
@@ -486,6 +469,20 @@ impl Scene {
         let width = 3.0;
         let depth = 2.0;
         let height = 4.0;
+        // scene
+        //     .load_mesh(
+        //         Path::new("Dragon_80K.obj"),
+        //         Transform {
+        //             pos: Vec3::new(0.0, 1.2, 0.0),
+        //             rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
+        //             scale: Vec3::splat(5.0),
+        //         },
+        //         Material::new()
+        //             .color([0.96078, 0.11372, 0.4039, 1.0])
+        //             .smooth(0.8)
+        //             .specular([1.0; 4], 0.015),
+        //     )
+        //     .await;
         // Large floor
         scene.add_mesh(Mesh {
             label: Some("Large Floor".to_string()),
@@ -499,6 +496,7 @@ impl Scene {
             ],
             indices: vec![2, 1, 0, 3, 2, 0],
         });
+
         // Large Roof
         scene.add_mesh(Mesh {
             label: Some("Large Roof".to_string()),
@@ -591,29 +589,58 @@ impl Scene {
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
         });
-
+        scene.add_sphere(Sphere::new(
+            Vec3::new(-2.0, 1.0, 5.0),
+            0.5,
+            Material::new()
+                .color([0.8, 0.3, 0.5, 1.0])
+                .smooth(1.0)
+                .specular([1.0; 4], 0.517),
+        ));
         scene.add_sphere(Sphere::new(
             Vec3::new(0.0, 1.0, 5.0),
             1.0,
-            Material::new()
-                .smooth(1.0)
-                .specular([1.0; 4], 0.517)
-                .glass(1.6),
+            // Material::new()
+            //     .smooth(1.0)
+            //     .specular([1.0; 4], 0.517)
+            //     .glass(1.6),
+            Material {
+                color: [0.95, 0.95, 1.0, 0.1],
+                emission_color: [0.0, 0.0, 0.0, 0.0],
+                specular_color: [1.0, 1.0, 1.0, 1.0],
+                absorption: [0.5, 0.5, 0.5, 1.0],
+                absorption_stength: 0.1,
+                emission_strength: 0.0,
+                smoothness: 0.99, // Very smooth for clear glass
+                specular: 0.05,   // Low specular (glass uses refraction primarily)
+                ior: 1.5,         // Glass IOR
+                flag: 1,
+                _p1: [0.0; 2],
+            },
         ));
-        scene
-            .load_mesh(
-                Path::new("Dragon_80K.obj"),
-                Transform {
-                    pos: Vec3::new(0.0, 1.2, 0.0),
-                    rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
-                    scale: Vec3::splat(5.0),
-                },
-                Material::new()
-                    .color([0.96078, 0.11372, 0.4039, 1.0])
-                    .smooth(0.8)
-                    .specular([1.0; 4], 0.015),
-            )
-            .await;
+        // scene
+        //     .load_mesh(
+        //         Path::new("Icosphere.obj"),
+        //         Transform {
+        //             pos: Vec3::new(1.0, 1.0, 5.0),
+        //             rot: Quat::default(),
+        //             scale: Vec3::ONE,
+        //         },
+        //         Material {
+        //             color: [0.95, 0.95, 1.0, 0.1],
+        //             emission_color: [0.0, 0.0, 0.0, 0.0],
+        //             specular_color: [1.0, 1.0, 1.0, 1.0],
+        //             absorption: [0.5, 0.5, 0.5, 1.0],
+        //             absorption_stength: 0.1,
+        //             emission_strength: 0.0,
+        //             smoothness: 0.99, // Very smooth for clear glass
+        //             specular: 0.05,   // Low specular (glass uses refraction primarily)
+        //             ior: 1.5,         // Glass IOR
+        //             flag: 1,
+        //             _p1: [0.0; 2],
+        //         },
+        //     )
+        //     .await;
 
         scene
     }
@@ -730,7 +757,7 @@ impl Scene {
             n_indices,
             meshes: self.meshes.len() as u32,
             camera: self.camera.to_uniform(),
-            nodes: self.bvh.n_nodes,
+            nodes: self.bvh_data.nodes.len() as u32,
             padding: [69., 0., 0.],
         }
     }
