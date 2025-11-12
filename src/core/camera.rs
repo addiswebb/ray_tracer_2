@@ -97,12 +97,10 @@ impl Camera {
 
         // Handle rotation - FPS style (no roll)
         if self.controller.rotate_horizontal != 0.0 || self.controller.rotate_vertical != 0.0 {
-            // Extract current yaw and pitch from rotation
             let (mut yaw, mut pitch, _roll) = self.transform.rot.to_euler(EulerRot::YXZ);
 
-            // Apply rotation deltas - INVERTED SIGNS
-            yaw += self.controller.rotate_horizontal * scalar; // Changed from - to +
-            pitch += self.controller.rotate_vertical * scalar; // Changed from - to +
+            yaw += self.controller.rotate_horizontal * scalar; 
+            pitch += self.controller.rotate_vertical * scalar;
 
             // Clamp pitch to avoid flipping
             const MAX_PITCH: f32 = FRAC_PI_2 - 0.1; // 89 degrees

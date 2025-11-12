@@ -1,7 +1,7 @@
 [
   {
     "label": "Run",
-    "command": "cargo run",
+    "command": "cargo run --release",
     "use_new_terminal": false
   }
 ]
