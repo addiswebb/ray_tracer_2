@@ -11,6 +11,9 @@ use crate::core::{
 };
 
 const WORKGROUP_SIZE: (u32, u32) = (8, 8);
+const MAX_MESHES: u64 = 400;
+const MAX_SPHERS: u64 = 500;
+const MAX_TRIANGLES: u64 = 275000;
 
 pub struct RayTracer {
     pub pipeline: wgpu::ComputePipeline,
@@ -117,25 +120,22 @@ impl RayTracer {
             mapped_at_creation: false,
         });
 
-        let max_triangles = 200000;
         let triangle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Triangle Buffer"),
-            size: (max_triangles * std::mem::size_of::<PackedTriangle>() as wgpu::BufferAddress),
+            size: (MAX_TRIANGLES * std::mem::size_of::<PackedTriangle>() as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
 
-        let max_spheres = 500;
         let sphere_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Sphere Buffer"),
-            size: (max_spheres * std::mem::size_of::<Sphere>() as wgpu::BufferAddress),
+            size: (MAX_SPHERS * std::mem::size_of::<Sphere>() as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
-        let max_meshes = 10;
         let mesh_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RayTracer Mesh Buffer"),
-            size: (max_meshes * std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress),
+            size: (MAX_MESHES * std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });

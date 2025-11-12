@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use glam::{Vec3};
+use glam::Vec3;
 
 use crate::core::mesh::{Mesh, MeshUniform, Vertex};
 
@@ -133,7 +133,7 @@ impl Default for Quality {
 }
 
 impl BVH {
-    pub const MAX_NODES: u32 = 400000;
+    pub const MAX_NODES: u32 = 520000;
     pub const MAX_DEPTH: u64 = 32;
     pub const TEST_SPLITS: u32 = 50;
     pub fn empty() -> Self {

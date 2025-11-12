@@ -713,7 +713,36 @@ impl Scene {
 
         scene
     }
+    pub async fn sponza(config: &wgpu::SurfaceConfiguration) -> Self {
+        let mut scene = Scene::new(config);
+        scene.set_camera(&CameraDescriptor {
+            transform: Transform::cam(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0)),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            focus_dist: 0.1,
+            ..Default::default()
+        });
 
+        scene
+            .load_mesh(
+                Path::new("sponza.obj"),
+                Transform {
+                    pos: Vec3::ZERO,
+                    rot: Quat::default(),
+                    scale: Vec3::splat(0.02),
+                },
+                Material::default(),
+            )
+            .await;
+        scene.add_sphere(Sphere {
+            pos: [0.0, 1.0, 0.0],
+            radius: 2.0,
+            material: Material::default().emissive([1.0; 4], 40.0),
+        });
+        scene
+    }
     pub fn to_uniform(&self) -> SceneUniform {
         let mut n_vertices: u32 = 0;
         let mut n_indices: u32 = 0;
@@ -773,7 +802,7 @@ pub async fn load_model_obj(path: &Path, transform: Transform, material: Materia
         |_p| Ok((Vec::new(), AHashMap::default())),
     )
     .unwrap();
-    for m in models.into_iter() {
+    for (i, m) in models.into_iter().enumerate() {
         let mut vertices = vec![];
         let mut indices = vec![];
         for (i, _) in (0..m.mesh.positions.len() / 3).enumerate() {
@@ -795,12 +824,15 @@ pub async fn load_model_obj(path: &Path, transform: Transform, material: Materia
         }
 
         meshes.push(Mesh {
-            label: Some(path.to_str().unwrap().to_string()),
+            label: Some(path.to_str().unwrap().to_string() + "_" + &i.to_string()),
             transform,
             material,
             vertices,
             indices,
         });
+        if i > 10 {
+            return meshes;
+        }
     }
 
     return meshes;

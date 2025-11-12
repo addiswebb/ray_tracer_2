@@ -114,11 +114,11 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         let params = Params {
-            width: 1920,
-            height: 1080,
-            number_of_bounces: 32,
+            width: 600,
+            height: 400,
+            number_of_bounces: 1,
             rays_per_pixel: 1,
-            skybox: 0,
+            skybox: 1,
             frames: 0,
             accumulate: 1,
             debug_flag: 0,
@@ -138,7 +138,7 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::room_2(&surface_config).await;
+        let scene = Scene::sponza(&surface_config).await;
 
         let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
 
