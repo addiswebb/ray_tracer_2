@@ -1,5 +1,3 @@
-const INF: f32 = 0x1p+127f;  // Hexadecimal float literal
-const MATERIAL_GLASS: i32 = 1;
 
 struct Params {
     width: u32,
@@ -117,7 +115,9 @@ const SKY_ZENITH: vec4<f32> = vec4<f32>(0.0788092, 0.36480793, 0.7264151, 0.0);
 const GROUND_COLOR: vec4<f32> = vec4<f32>(0.35, 0.3, 0.35, 0.0);
 const SUN_INTENSITY: f32 = 0.1;
 const SUN_FOCUS: f32 = 500.0;
-const epsilon: f32 = 1e-5;
+const EPSILON: f32 = 1e-5;
+const INF: f32 = 0x1p+127f;  // Hexadecimal float literal
+const MATERIAL_GLASS: i32 = 1;
 
 @compute
 @workgroup_size(8,8)
@@ -188,45 +188,6 @@ fn reflectance(cos_theta: f32, ior: f32) -> f32 {
     r0 *= r0;
     return r0 + (1.0 - r0) * pow((1.0 - cos_theta), 5.0);
 }
-// fn reflectance(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> f32 {
-//     let refract_ratio = ior_a / ior_b;
-//     let cos_angle_in = -dot(uv, normal);
-//     let sin_sqr_angle_or = refract_ratio * refract_ratio * (1.0 - cos_angle_in * cos_angle_in);
-//     if sin_sqr_angle_or >= 1.0 {
-//         return 1.0;
-//     }
-
-//     let cos_angle_or = sqrt(1.0 - sin_sqr_angle_or);
-//     let denominator_perp = ior_a * cos_angle_in + ior_b * cos_angle_or;
-//     let denominator_parallel = ior_b * cos_angle_in + ior_a * cos_angle_or;
-//     if abs(denominator_perp) < 1e-8 || abs(denominator_parallel) < 1e-8 {
-//         return 1.0;
-//     }
-
-//     var r_perp = (ior_a * cos_angle_in - ior_b * cos_angle_or) / denominator_perp;
-//     r_perp *= r_perp;
-//     var r_parallel = (ior_b * cos_angle_in - ior_a * cos_angle_or) / denominator_parallel;
-//     r_parallel *= r_parallel;
-//     return (r_perp + r_parallel) * 0.5;
-// }
-
-// fn refract(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> vec3<f32> {
-//     let refraction_ratio = ior_a / ior_b;
-//     let cos_theta = min(dot(-uv, normal), 1.0);
-//     let r_out_perp = refraction_ratio * (uv + cos_theta * normal);
-//     let r_out_parallel = -sqrt(abs(1.0 - dot(r_out_perp, r_out_perp))) * normal;
-//     return r_out_perp + r_out_parallel;
-// }
-
-// fn refract(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> vec3<f32> {
-//     let refract_ratio = ior_a / ior_b;
-//     let cos_angle_in = -dot(uv, normal);
-//     let sin_sqr_angle_or = refract_ratio * refract_ratio * (1.0 - cos_angle_in * cos_angle_in);
-//     if sin_sqr_angle_or > 1.0 {
-//         return vec3<f32>(0.0);
-//     }
-//     return refract_ratio * uv + (refract_ratio * cos_angle_in - sqrt(1.0 - sin_sqr_angle_or)) * normal;
-// }
 
 fn get_environment_light(ray: Ray) -> vec4<f32> {
     let sky_gradient_t = pow(smoothstep(0.0, 0.4, ray.dir.y), 0.35);
@@ -255,21 +216,12 @@ fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32, cull_backface: bool) -> 
         let dst_near = max(0.0, (-b - s) / (2.0 * a));
         let dst_far = (-b + s) / (2.0 * a);
 
-        if dst_far >= 0.0 {
+        if dst_far >= 0.001 {
             let is_inside = dst_near == 0.0;
-            if is_inside {
-                hit.hit = true;
-                hit.dst = dst_far;
-            } else {
-                hit.hit = true;
-                hit.dst = dst_near;
-            }
+            hit.hit = true;
+            hit.dst = select(dst_near, dst_far, is_inside);
             hit.hit_point = ray.origin + ray.dir * hit.dst;
-            if is_inside {
-                hit.normal = -normalize(hit.hit_point - centre);
-            } else {
-                hit.normal = normalize(hit.hit_point - centre);
-            }
+            hit.normal = select(normalize(hit.hit_point - centre), -normalize(hit.hit_point - centre), is_inside);
             hit.backface = is_inside;
         }
     }
@@ -287,12 +239,7 @@ fn ray_triangle(ray: Ray, tri: Triangle, cull_backface: bool) -> Hit {
     let dao = cross(ao, ray.dir);
     let determinant = -dot(ray.dir, normal);
 
-    var keep: bool;
-    if cull_backface {
-        keep = determinant >= 1e-8;
-    } else {
-        keep = abs(determinant) >= 1e-8;
-    }
+    let keep = select(abs(determinant) >= 1e-8, determinant >= 1e-8, cull_backface);
 
     if !keep {
         return hit;
@@ -304,7 +251,7 @@ fn ray_triangle(ray: Ray, tri: Triangle, cull_backface: bool) -> Hit {
     let v = -dot(edge_ab, dao) * inverse_determinant;
     let w = 1.0 - u - v;
 
-    if dst > epsilon && u >= 0.0 && v >= 0.0 && w >= 0.0 {
+    if dst > EPSILON && u >= 0.0 && v >= 0.0 && w >= 0.0 {
         hit.hit = true;
         hit.normal = normalize(tri.n1 * w + tri.n2 * u + tri.n3 * v) * sign(determinant);
         hit.backface = determinant < 0.0;
@@ -372,9 +319,8 @@ fn ray_aabb_dist(ray: Ray, b_min: vec3<f32>, b_max: vec3<f32>, t: f32) -> f32 {
     let did_hit = t_far >= t_near && t_near < t && t_far > 0.0;
     if did_hit {
         return t_near;
-    } else {
-        return INF;
     }
+    return INF;
 }
 
 fn calculate_ray_collions(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
