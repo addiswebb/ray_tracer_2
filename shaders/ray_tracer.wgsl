@@ -42,17 +42,12 @@ struct Mesh {
 }
 
 struct Camera {
-    origin: vec3<f32>,
-    lens_radius: f32,
-    lower_left_corner: vec3<f32>,
-    near: f32,
-    horizontal: vec3<f32>,
-    far: f32,
-    vertical: vec3<f32>,
-    w: vec3<f32>,
-    u: vec3<f32>,
-    v: vec3<f32>,
+    cam_to_world: mat4x4<f32>,
+    view_params: vec3<f32>,
+    defocus_strength: f32,
+    diverge_strength: f32,
 }
+
 struct Scene {
     spheres: u32,
     vertices: u32,
@@ -188,10 +183,10 @@ fn rand_in_unit_disk(seed: ptr<function, u32>) -> vec2<f32> {
     return point_on_circle * sqrt(rand(seed));
 }
 
-fn reflectance(incident: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> f32 {
-    let cos_theta = dot(-incident, normal);
-    let r0 = pow((ior_a - ior_b) / (ior_a + ior_b), 2.0);
-    return r0 + (1.0 - r0) * pow(1.0 - cos_theta, 5.0);
+fn reflectance(cos_theta: f32, ior: f32) -> f32 {
+    var r0 = (1.0 - ior) / (1.0 + ior);
+    r0 *= r0;
+    return r0 + (1.0 - r0) * pow((1.0 - cos_theta), 5.0);
 }
 // fn reflectance(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> f32 {
 //     let refract_ratio = ior_a / ior_b;
@@ -222,22 +217,6 @@ fn reflectance(incident: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -
 //     let r_out_parallel = -sqrt(abs(1.0 - dot(r_out_perp, r_out_perp))) * normal;
 //     return r_out_perp + r_out_parallel;
 // }
-
-fn refract(incident: vec3<f32>, normal: vec3<f32>, ior_in: f32, ior_out: f32) -> vec3<f32> {
-    let eta = ior_in / ior_out;
-    let cosi = clamp(dot(-incident, normal), -1.0, 1.0);
-    let n = normal;
-    let k = 1.0 - eta * eta * (1.0 - cosi * cosi);
-
-    if k < 0.0 {
-        // Total internal reflection
-        return reflect(incident, normal);
-    } else {
-        // Correct perpendicular + parallel decomposition
-        return normalize(eta * incident + (eta * cosi - sqrt(k)) * n);
-    }
-}
-
 
 // fn refract(uv: vec3<f32>, normal: vec3<f32>, ior_a: f32, ior_b: f32) -> vec3<f32> {
 //     let refract_ratio = ior_a / ior_b;
@@ -464,25 +443,23 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
                 ray.transmittance = vec4(x.r, x.g, x.b, 1.0);
             }
 
-            let ior_current = select(1.0, hit.material.ior, !hit.backface);
-            let ior_next = select(hit.material.ior, 1.0, !hit.backface);
+            let ior = select(1.0 / hit.material.ior, hit.material.ior, hit.backface);
 
             var reflect_dir = reflect(ray.dir, hit.normal);
-            var refract_dir = refract(ray.dir, hit.normal, ior_current, ior_next);
+            var refract_dir = refract(ray.dir, hit.normal, ior);
+            let cos_theta = min(dot(-ray.dir, hit.normal), 1.0);
+            let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+            let cannot_refract = ior * sin_theta > 1.0;
 
-            // let reflect_weight = reflectance(ray.dir, hit.normal, ior_current, ior_next);
-            // let refract_weight = 1.0 - reflect_weight;
+            let follow_reflection = cannot_refract || reflectance(cos_theta, ior) > rand(seed);
 
-            // let diffuse_dir = normalize(hit.normal + rand_direction(seed));
+            let diffuse_dir = normalize(hit.normal + rand_direction(seed));
 
-            // reflect_dir = normalize(mix(diffuse_dir, reflect_dir, hit.material.specular));
-            // refract_dir = normalize(mix(-diffuse_dir, refract_dir, hit.material.smoothness));
+            reflect_dir = normalize(mix(diffuse_dir, reflect_dir, hit.material.specular));
+            refract_dir = normalize(mix(-diffuse_dir, refract_dir, hit.material.smoothness));
 
-            // let follow_reflection = rand(seed) <= reflect_weight;
-            // ray.dir = select(refract_dir, reflect_dir, follow_reflection);
-            ray.dir = normalize(refract_dir);
-            let eps = max(1e-5, 1e-3 * hit.dst);
-            ray.origin = hit.hit_point + eps * hit.normal * sign(dot(hit.normal, ray.dir));
+            ray.dir = select(refract_dir, reflect_dir, follow_reflection);
+            ray.origin = hit.hit_point + 1e-4 * hit.normal * sign(dot(hit.normal, ray.dir));
         } else {
             let is_specular_bounce = hit.material.specular >= rand(seed);
             let diffuse_dir = rand_hemisphere(hit.normal, seed);
@@ -509,23 +486,27 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
 }
 
 fn frag(i: FragInput) -> vec4<f32> {
-    let pixel_coord = i.pos * i.size;
+    let pixel_coord = i.pos;
     var rng_state = u32(pixel_coord.y * i.size.x + pixel_coord.x) + u32(abs(params.frames)) * 719393u;
     if params.debug_flag != 0 {
         return debug_trace(i);
     }
+    let uv = i.pos / (i.size - 1.0);
+    let cam_origin = scene.camera.cam_to_world[3].xyz;
+    let local_focus_point = vec3(uv - 0.5, 1.0) * scene.camera.view_params;
+    let focus_point = (scene.camera.cam_to_world * vec4(local_focus_point, 1.0)).xyz;
+    let cam_right = scene.camera.cam_to_world[0].xyz;
+    let cam_up = scene.camera.cam_to_world[1].xyz;
+
     var total_incoming_light = vec4<f32>(0.0);
-    for (var j = 0; j <= params.rays_per_pixel; j += 1) {
-        let anti_aliasing = vec2<f32>(rand(&rng_state), rand(&rng_state));
-        let pos = (i.pos + anti_aliasing) / i.size;
-
-        let rd = scene.camera.lens_radius * rand_in_unit_disk(&rng_state);
-        let offset = scene.camera.u * rd.x + scene.camera.v * rd.y;
-
+    for (var j = 0; j < params.rays_per_pixel; j += 1) {
+        let defocus_jitter = rand_in_unit_disk(&rng_state) * scene.camera.defocus_strength / i.size.x;
         var ray: Ray;
-        ray.origin = scene.camera.origin + offset;
-        ray.dir = normalize(scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin);
-        ray.inv_dir = 1.0 / ray.dir;
+        ray.origin = cam_origin + cam_right * defocus_jitter.x + cam_up * defocus_jitter.y;
+
+        let diverge_jitter = rand_in_unit_disk(&rng_state) * scene.camera.diverge_strength / i.size.x;
+        let jittered_focus_point = focus_point + cam_right * diverge_jitter.x + cam_up * diverge_jitter.y;
+        ray.dir = normalize(jittered_focus_point - ray.origin);
 
         total_incoming_light += trace(ray, &rng_state);
     }
@@ -537,8 +518,14 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
     var stats = vec2<i32>(0, 0);
     var ray: Ray;
     let pos = i.pos / i.size;
-    ray.origin = scene.camera.origin ;
-    ray.dir = normalize(scene.camera.lower_left_corner + pos.x * scene.camera.horizontal + pos.y * scene.camera.vertical - ray.origin);
+    let cam_origin = scene.camera.cam_to_world[3].xyz;
+    let uv = i.pos / (i.size - 1.0);
+    let local_focus_point = vec3(uv - 0.5, 1.0) * scene.camera.view_params;
+    let focus_point = (scene.camera.cam_to_world * vec4(local_focus_point, 1.0)).xyz;
+    let cam_right = scene.camera.cam_to_world[0].xyz;
+    let cam_up = scene.camera.cam_to_world[1].xyz;
+    ray.origin = cam_origin;
+    ray.dir = normalize(focus_point - ray.origin);
     ray.inv_dir = 1.0 / ray.dir;
     let hit: Hit = calculate_ray_collions(ray, &stats);
     switch params.debug_flag{
@@ -575,8 +562,18 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
             let d = hit.dst / f32(params.debug_scale);
             return vec4<f32>(d, d, d, 1.0);
         }
-        default: {
+        case 7: {
+            if !hit.hit {return vec4<f32>(0.0); }
+            let d = hit.dst;
+            let s = f32(params.debug_scale) / 10.0;
+            if d > s {
+                return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+            } else {
+                return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+            }
+        }
+    default: {
             return vec4<f32>(1.0, 0.0, 1.0, 1.0);
         }
-    }
+}
 }

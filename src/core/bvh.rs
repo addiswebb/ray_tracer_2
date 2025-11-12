@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use glam::{Mat4, Vec3};
+use glam::{Vec3};
 
 use crate::core::mesh::{Mesh, MeshUniform, Vertex};
 

@@ -102,7 +102,7 @@ pub struct Mesh {
     pub material: Material,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Transform {
     pub pos: Vec3,
     pub rot: Quat,
@@ -111,6 +111,13 @@ pub struct Transform {
 impl Transform {
     pub fn to_matrix(&self) -> Mat4 {
         Mat4::from_scale_rotation_translation(self.scale, self.rot, self.pos)
+    }
+    pub fn cam(origin: Vec3, look_at: Vec3) -> Self {
+        Self {
+            pos: origin,
+            rot: Quat::look_at_lh(origin, look_at, Vec3::Y),
+            scale: Vec3::ONE,
+        }
     }
 }
 

@@ -11,7 +11,7 @@ use rand::Rng;
 use crate::core::{
     bvh::{self, BVH, MeshDataList, Node, Quality},
     camera::{CameraDescriptor, CameraUniform},
-    mesh::{Material, Mesh, MeshUniform, Sphere, Transform, Vertex},
+    mesh::{Material, Mesh, Sphere, Transform, Vertex},
 };
 
 use super::camera::Camera;
@@ -34,23 +34,19 @@ pub struct SceneUniform {
     meshes: u32,
     camera: CameraUniform,
     nodes: u32,
-    padding: [f32; 3],
+    padding: [f32; 6],
 }
 
 #[allow(dead_code)]
 impl Scene {
     pub fn new(_config: &wgpu::SurfaceConfiguration) -> Self {
         let camera = Camera::new(&CameraDescriptor {
-            origin: Vec3::ZERO,
-            look_at: Vec3::ZERO,
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::ZERO, Vec3::Z),
             fov: 45.0,
-            // aspect: config.width as f32 / config.height as f32,
-            aspect: 16.0 / 9.0,
             near: 0.1,
             far: 100.0,
-            aperture: 1.0,
             focus_dist: 2.0,
+            ..Default::default()
         });
         Self {
             camera,
@@ -111,15 +107,13 @@ impl Scene {
         let mut scene = Scene::new(config);
 
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(5.0, 0.0, 0.0),
-            look_at: Vec3::new(1.0, 0.0, 0.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::new(5.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
             focus_dist: 1.0,
+            ..Default::default()
         });
 
         let mut mesh = load_model_obj(
@@ -185,15 +179,13 @@ impl Scene {
         let mut scene = Scene::new(config);
 
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(5.0, 0.0, 0.0),
-            look_at: Vec3::new(1.0, 0.0, 0.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::new(5.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
             focus_dist: 1.0,
+            ..Default::default()
         });
 
         let mut mesh = load_model_obj(
@@ -214,15 +206,13 @@ impl Scene {
     pub fn random_balls(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(13.0, 2.0, 3.0),
-            look_at: Vec3::new(0.0, 0.0, 0.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::new(13.0, 2.0, 3.0), Vec3::new(0.0, 0.0, 0.0)),
             fov: 20.0,
             aspect: 16.0 / 9.0,
             near: 0.1,
             far: 100.0,
-            aperture: 0.6,
             focus_dist: 10.0,
+            ..Default::default()
         });
         scene.add_spheres(vec![
             // Floor
@@ -294,15 +284,13 @@ impl Scene {
     pub fn room(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(0.0, 1.0, 3.0),
-            look_at: Vec3::new(0.0, 1.0, 2.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::new(0.0, 1.0, 3.0), Vec3::new(0.0, 1.0, 2.0)),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
             focus_dist: 0.1,
+            ..Default::default()
         });
 
         // Floor
@@ -425,15 +413,13 @@ impl Scene {
     pub async fn dragon(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(0.0, 1.2, 9.0),
-            look_at: Vec3::new(0.0, 1.2, 8.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::new(0.0, 1.2, 9.0), Vec3::new(0.0, 1.2, 8.0)),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
             focus_dist: 0.1,
+            ..Default::default()
         });
 
         scene
@@ -455,34 +441,31 @@ impl Scene {
     pub async fn room_2(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(0.0, 1.2, 9.0),
-            look_at: Vec3::new(0.0, 1.2, 8.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
-            fov: 45.0,
+            transform: Transform::cam(Vec3::new(0.0, 1.28, 13.5), Vec3::new(0.0, 1.28, 12.5)),
+            fov: 26.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
-            focus_dist: 0.1,
+            focus_dist: 8.6,
+            defocus_strength: 100.0,
+            diverge_strength: 1.5,
         });
 
-        let width = 3.0;
-        let depth = 2.0;
-        let height = 4.0;
-        // scene
-        //     .load_mesh(
-        //         Path::new("Dragon_80K.obj"),
-        //         Transform {
-        //             pos: Vec3::new(0.0, 1.2, 0.0),
-        //             rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
-        //             scale: Vec3::splat(5.0),
-        //         },
-        //         Material::new()
-        //             .color([0.96078, 0.11372, 0.4039, 1.0])
-        //             .smooth(0.8)
-        //             .specular([1.0; 4], 0.015),
-        //     )
-        //     .await;
+        let (width, depth, height) = (3.0, 2.0, 4.0);
+        scene
+            .load_mesh(
+                Path::new("Dragon_80K.obj"),
+                Transform {
+                    pos: Vec3::new(0.0, 1.2, -0.6),
+                    rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
+                    scale: Vec3::splat(4.7),
+                },
+                Material::new()
+                    .color([0.96078, 0.11372, 0.4039, 1.0])
+                    .smooth(0.8)
+                    .specular([1.0; 4], 0.015),
+            )
+            .await;
         // Large floor
         scene.add_mesh(Mesh {
             label: Some("Large Floor".to_string()),
@@ -501,7 +484,10 @@ impl Scene {
         scene.add_mesh(Mesh {
             label: Some("Large Roof".to_string()),
             transform: Transform::default(),
-            material: Material::new().color([0.898, 0.87, 0.815, 1.0]),
+            material: Material::new()
+                .color([0.898, 0.87, 0.815, 1.0])
+                .smooth(0.877)
+                .specular([1.0; 4], 0.327),
             vertices: vec![
                 Vertex::new(Vec3::new(-10.0, 8.5, -10.0), -Vec3::Y),
                 Vertex::new(Vec3::new(10.0, 8.5, -10.0), -Vec3::Y),
@@ -576,11 +562,11 @@ impl Scene {
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
         });
-        // material: Material::new().color([0.1254, 0.41176, 0.8274, 1.0]),
+
         scene.add_mesh(Mesh {
             label: Some("Light".to_string()),
             transform: Transform::default(),
-            material: Material::new().emissive([1.0, 0.8588, 0.3529, 1.0], 9.0),
+            material: Material::new().emissive([1.0, 0.8588, 0.3529, 1.0], 60.0),
             vertices: vec![
                 Vertex::new(Vec3::new(-0.8, height - 0.02, -0.8), -Vec3::Y),
                 Vertex::new(Vec3::new(0.8, height - 0.02, -0.8), -Vec3::Y),
@@ -590,30 +576,18 @@ impl Scene {
             indices: vec![0, 1, 2, 0, 2, 3],
         });
         scene.add_sphere(Sphere::new(
-            Vec3::new(-2.0, 1.0, 5.0),
-            0.5,
-            Material::new()
-                .color([0.8, 0.3, 0.5, 1.0])
-                .smooth(1.0)
-                .specular([1.0; 4], 0.517),
-        ));
-        scene.add_sphere(Sphere::new(
-            Vec3::new(0.0, 1.0, 5.0),
-            1.0,
-            // Material::new()
-            //     .smooth(1.0)
-            //     .specular([1.0; 4], 0.517)
-            //     .glass(1.6),
+            Vec3::new(0.0, 1.0, 4.8),
+            1.15,
             Material {
-                color: [0.95, 0.95, 1.0, 0.1],
-                emission_color: [0.0, 0.0, 0.0, 0.0],
+                color: [0.0; 4],
+                emission_color: [0.0; 4],
                 specular_color: [1.0, 1.0, 1.0, 1.0],
-                absorption: [0.5, 0.5, 0.5, 1.0],
-                absorption_stength: 0.1,
+                absorption: [0.0; 4],
+                absorption_stength: 0.0,
                 emission_strength: 0.0,
-                smoothness: 0.99, // Very smooth for clear glass
-                specular: 0.05,   // Low specular (glass uses refraction primarily)
-                ior: 1.5,         // Glass IOR
+                smoothness: 1.0,
+                specular: 0.517,
+                ior: 1.6,
                 flag: 1,
                 _p1: [0.0; 2],
             },
@@ -648,15 +622,13 @@ impl Scene {
         let mut scene = Scene::new(config);
 
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(0.0, 0.0, 3.0),
-            look_at: Vec3::new(0.0, 0.0, -1.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::new(0.0, 0.0, 3.0), Vec3::new(0.0, 0.0, -1.0)),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
             focus_dist: 0.1,
+            ..Default::default()
         });
         scene.add_spheres(vec![
             //floor
@@ -689,15 +661,13 @@ impl Scene {
     pub fn balls(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {
-            origin: Vec3::new(3.089, 1.53, -3.0),
-            look_at: Vec3::new(-2.0, -1.0, 2.0),
-            view_up: Vec3::new(0.0, 1.0, 0.0),
+            transform: Transform::cam(Vec3::new(3.089, 1.53, -3.0), Vec3::new(-2.0, -1.0, 2.0)),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
             far: 100.0,
-            aperture: 0.0,
             focus_dist: 0.1,
+            ..Default::default()
         });
 
         scene.add_spheres(vec![
@@ -758,7 +728,7 @@ impl Scene {
             meshes: self.meshes.len() as u32,
             camera: self.camera.to_uniform(),
             nodes: self.bvh_data.nodes.len() as u32,
-            padding: [69., 0., 0.],
+            padding: [0.0; 6],
         }
     }
 }

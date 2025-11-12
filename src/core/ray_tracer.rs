@@ -194,7 +194,6 @@ impl RayTracer {
             compilation_options: PipelineCompilationOptions::default(),
             cache: None,
         });
-
         Self {
             pipeline,
             bind_group,

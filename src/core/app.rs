@@ -62,6 +62,8 @@ pub struct AppState {
     pub selected_entity: i32,
 }
 
+const DEBUG_MODES: u32 = 7;
+
 impl AppState {
     async fn new(
         instance: &wgpu::Instance,
@@ -266,7 +268,6 @@ impl App {
                 }
                 _ => (),
             }
-            // state.params.frames = -1;
             state.prev_scene = state.selected_scene;
         }
         state.queue.write_buffer(
@@ -313,7 +314,31 @@ impl App {
                     }
                     true
                 }
-
+                KeyCode::KeyE => {
+                    if key_state.is_pressed() {
+                        state.params.debug_flag += 1;
+                        if state.selected_scene > DEBUG_MODES as i32 {
+                            state.selected_scene = 0;
+                        }
+                        state.params.frames = -1;
+                        state.average_frame_time = Duration::ZERO;
+                    }
+                    true
+                }
+                KeyCode::KeyP => {
+                    if key_state.is_pressed() {
+                        println!("Saving Render to file");
+                        state
+                            .texture
+                            .save_to_file(
+                                &state.device,
+                                &state.queue,
+                                "C:/users/addis/downloads/test.png".to_string(),
+                            )
+                            .unwrap();
+                    }
+                    true
+                }
                 _ => state
                     .scene
                     .camera
@@ -407,15 +432,15 @@ impl App {
                     ui.separator();
                     ui.heading("Camera");
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut camera.origin.x).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.origin.y).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.origin.z).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.transform.pos.x).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.transform.pos.y).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.transform.pos.z).speed(0.01));
                         ui.label(format!("Position"));
                     });
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut camera.look_at.x).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.look_at.y).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.look_at.z).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.transform.rot.x).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.transform.rot.y).speed(0.01));
+                        ui.add(egui::DragValue::new(&mut camera.transform.rot.z).speed(0.01));
                         ui.label(format!("Look At"));
                     });
                     ui.add(egui::Slider::new(&mut camera.fov, 10.0..=90.0).text("Fov"));
@@ -434,10 +459,20 @@ impl App {
                     });
 
                     ui.add(
-                        egui::Slider::new(&mut camera.focus_dist, 0.0..=1000.0)
+                        egui::Slider::new(&mut camera.diverge_strength, 0.0..=100.0)
+                            .step_by(0.1)
+                            .text("Diverge Strength"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut camera.defocus_strength, 0.0..=100.0)
+                            .step_by(0.1)
+                            .text("Defocus Strength"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut camera.focus_dist, 0.0..=10.0)
+                            .step_by(0.01)
                             .text("Focus Distance"),
                     );
-                    ui.add(egui::Slider::new(&mut camera.aperture, -2.0..=2.0).text("Aperture"));
                     ui.separator();
                     ui.heading("Scene");
                     ui.checkbox(&mut skybox, "Skybox");
@@ -719,7 +754,7 @@ impl App {
                         ui.add(
                             egui::DragValue::new(&mut params.debug_flag)
                                 .speed(1)
-                                .range(0..=6),
+                                .range(0..=DEBUG_MODES),
                         );
                     });
                     ui.add(

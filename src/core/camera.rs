@@ -1,7 +1,7 @@
-use std::time::Duration;
+use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use egui_wgpu::wgpu;
-use glam::Vec3;
+use glam::{EulerRot, Quat, Vec3};
 #[allow(unused_imports)]
 use wgpu::util::DeviceExt;
 use winit::{
@@ -9,160 +9,130 @@ use winit::{
     event::{ElementState, MouseScrollDelta},
     keyboard::KeyCode,
 };
+
+use crate::core::mesh::Transform;
 const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
 const SAFE_FRAC_PI_2_DEG: f32 = SAFE_FRAC_PI_2 * (180.0 / std::f32::consts::PI);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct CameraUniform {
-    pub origin: [f32; 3],
-    pub lens_radius: f32,
-    pub lower_left_corner: [f32; 3],
-    pub near: f32,
-    pub horizontal: [f32; 3],
-    pub far: f32,
-    pub vertical: [f32; 3],
-    _p1: f32,
-    pub w: [f32; 3],
-    _p2: f32,
-    pub u: [f32; 3],
-    _p3: f32,
-    pub v: [f32; 3],
-    _p4: f32,
+    pub cam_to_world: [[f32; 4]; 4],
+    pub view_params: [f32; 3],
+    pub defocus_strength: f32,
+    pub diverge_strength: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
-    pub origin: Vec3,
-    pub look_at: Vec3,
-    pub view_up: Vec3,
+    pub transform: Transform,
     pub fov: f32,
     pub aspect: f32,
     pub near: f32,
     pub far: f32,
-    pub aperture: f32,
     pub focus_dist: f32,
     pub controller: CameraController,
+    pub defocus_strength: f32,
+    pub diverge_strength: f32,
 }
 
 #[allow(unused)]
 pub struct CameraDescriptor {
-    pub origin: Vec3,
-    pub look_at: Vec3,
-    pub view_up: Vec3,
+    pub transform: Transform,
     pub fov: f32,
     pub aspect: f32,
     pub near: f32,
     pub far: f32,
-    pub aperture: f32,
     pub focus_dist: f32,
+    pub defocus_strength: f32,
+    pub diverge_strength: f32,
+}
+
+impl Default for CameraDescriptor {
+    fn default() -> Self {
+        Self {
+            transform: Transform {
+                pos: Vec3::ZERO,
+                rot: Quat::IDENTITY,
+                scale: Vec3::ONE,
+            },
+            fov: 90.0,
+            aspect: 16.0 / 9.0,
+            near: 0.01,
+            far: 1000.0,
+            focus_dist: 0.0,
+            defocus_strength: 0.0,
+            diverge_strength: 0.0,
+        }
+    }
 }
 impl Camera {
     pub fn new(camera_descriptor: &CameraDescriptor) -> Self {
         Camera {
-            origin: camera_descriptor.origin,
-            look_at: camera_descriptor.look_at,
-            view_up: camera_descriptor.view_up,
+            transform: camera_descriptor.transform,
             fov: camera_descriptor.fov,
             // aspect: camera_descriptor.aspect,
             aspect: 16.0 / 9.0,
             near: camera_descriptor.near,
             far: camera_descriptor.far,
-            aperture: camera_descriptor.aperture,
             focus_dist: camera_descriptor.focus_dist,
-            controller: CameraController::new(600.0, 1.8),
+            controller: CameraController::new(10.0, 1.8),
+            defocus_strength: camera_descriptor.defocus_strength,
+            diverge_strength: camera_descriptor.diverge_strength,
         }
     }
     pub fn to_uniform(&self) -> CameraUniform {
-        let theta = radians(self.fov);
-        let half_height = self.near * f32::tan(theta / 2.0);
-        let half_width = self.aspect * half_height;
-        let w = (self.origin - self.look_at).normalize();
-        let u = self.view_up.cross(w).normalize();
-        let v = w.cross(u);
-        let half_width_u = half_width * u;
-        let half_height_v = half_height * v;
-        let horizontal = 2.0 * half_width_u;
-        let vertical = 2.0 * half_height_v;
-        let lower_left_corner = self.origin - half_width_u - half_height_v - self.near * w;
-
+        let plane_height = self.focus_dist * (self.fov * 0.5).to_radians().tan() * 2.0;
+        let plane_width = plane_height * self.aspect;
         CameraUniform {
-            origin: self.origin.to_array(),
-            lower_left_corner: lower_left_corner.to_array(),
-            horizontal: horizontal.to_array(),
-            vertical: vertical.to_array(),
-            w: w.to_array(),
-            u: u.to_array(),
-            v: v.to_array(),
-            lens_radius: self.aperture / 2.0,
-            near: self.near,
-            far: self.far,
-            _p1: 0.0,
-            _p2: 0.0,
-            _p3: 0.0,
-            _p4: 0.0,
+            cam_to_world: self.transform.to_matrix().to_cols_array_2d(),
+            view_params: [plane_width, plane_height, self.focus_dist],
+            defocus_strength: self.defocus_strength,
+            diverge_strength: self.diverge_strength,
         }
     }
     pub fn update_camera(&mut self, dt: Duration) {
         let dt = dt.as_secs_f32();
-
-        let direction = (self.look_at - self.origin).normalize();
-        let mut pitch = direction.y.asin();
-        let mut yaw = direction.x.atan2(direction.z);
-        // Move forward/backward and left/right
-        let (yaw_sin, yaw_cos) = yaw.sin_cos();
-        let forward = Vec3::new(yaw_sin, 0.0, yaw_cos).normalize();
-        let right = Vec3::new(yaw_cos, 0.0, -yaw_sin).normalize();
-        self.origin += forward
-            * (self.controller.amount_forward - self.controller.amount_backward)
-            * self.controller.speed
-            * dt;
-        self.origin += right
-            * (self.controller.amount_right - self.controller.amount_left)
-            * self.controller.speed
-            * dt;
-
-        // Move in/out (aka. "zoom")
-        // Note: this isn't an actual zoom. The camera's position
-        // changes when zooming. I've added this to make it easier
-        // to get closer to an object you want to focus on.
-        let (pitch_sin, pitch_cos) = pitch.sin_cos();
-        let scrollward = Vec3::new(pitch_cos * yaw_sin, pitch_sin, pitch_cos * yaw_cos).normalize();
-        self.origin -= scrollward
-            * self.controller.scroll
-            * self.controller.speed
-            * self.controller.sensitivity
-            * dt;
-        self.controller.scroll = 0.0;
-
-        // Move up/down. Since we don't use roll, we can just
-        // modify the y coordinate directly.
-        self.origin.y +=
-            (self.controller.amount_up - self.controller.amount_down) * self.controller.speed * dt;
-
         let scalar = self.controller.sensitivity * dt;
-        // Rotate
-        yaw += self.controller.rotate_horizontal * scalar;
-        pitch += -self.controller.rotate_vertical * scalar;
 
-        // If process_mouse isn't called every frame, these values
-        // will not get set to zero, and the camera will rotate
-        // when moving in a non cardinal direction.
-        self.controller.rotate_horizontal = 0.0;
-        self.controller.rotate_vertical = 0.0;
+        // Handle rotation - FPS style (no roll)
+        if self.controller.rotate_horizontal != 0.0 || self.controller.rotate_vertical != 0.0 {
+            // Extract current yaw and pitch from rotation
+            let (mut yaw, mut pitch, _roll) = self.transform.rot.to_euler(EulerRot::YXZ);
 
-        // Keep the camera's angle from going too high/low.
-        if pitch < -SAFE_FRAC_PI_2_DEG {
-            pitch = -SAFE_FRAC_PI_2_DEG;
-        } else if pitch > SAFE_FRAC_PI_2_DEG {
-            pitch = SAFE_FRAC_PI_2_DEG;
+            // Apply rotation deltas - INVERTED SIGNS
+            yaw += self.controller.rotate_horizontal * scalar; // Changed from - to +
+            pitch += self.controller.rotate_vertical * scalar; // Changed from - to +
+
+            // Clamp pitch to avoid flipping
+            const MAX_PITCH: f32 = FRAC_PI_2 - 0.1; // 89 degrees
+            pitch = pitch.clamp(-MAX_PITCH, MAX_PITCH);
+
+            // Reconstruct quaternion with zero roll
+            self.transform.rot = Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0);
+
+            // Reset rotation inputs
+            self.controller.rotate_horizontal = 0.0;
+            self.controller.rotate_vertical = 0.0;
         }
-        self.look_at = self.origin
-            + Vec3::new(
-                pitch.cos() * yaw.sin(),
-                pitch.sin(),
-                pitch.cos() * yaw.cos(),
-            );
+
+        let mut local_move = Vec3::ZERO;
+        local_move.z += self.controller.amount_forward - self.controller.amount_backward;
+        local_move.x += self.controller.amount_right - self.controller.amount_left;
+        local_move.y += self.controller.amount_up - self.controller.amount_down;
+
+        if local_move != Vec3::ZERO {
+            let world_move =
+                self.transform.rot * (local_move.normalize() * self.controller.speed * dt);
+            self.transform.pos += world_move;
+        }
+
+        if self.controller.scroll != 0.0 {
+            let zoom_delta =
+                self.transform.rot * Vec3::Z * self.controller.scroll * self.controller.speed * dt;
+            self.transform.pos += zoom_delta;
+            self.controller.scroll = 0.0;
+        }
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -258,11 +228,4 @@ impl CameraController {
         };
         return true;
     }
-}
-pub fn radians(deg: f32) -> f32 {
-    deg * (std::f32::consts::PI / 180.0)
-}
-#[allow(unused)]
-pub fn degrees(rad: f32) -> f32 {
-    rad * (180.0 / std::f32::consts::PI)
 }
