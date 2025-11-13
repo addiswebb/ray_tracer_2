@@ -5,7 +5,7 @@ use std::{
 
 use egui_wgpu::{
     ScreenDescriptor,
-    wgpu::{self, SurfaceError, util::DeviceExt},
+    wgpu::{self, Limits, SurfaceError, util::DeviceExt},
 };
 use glam::Quat;
 use winit::{
@@ -62,7 +62,7 @@ pub struct AppState {
     pub selected_entity: i32,
 }
 
-const DEBUG_MODES: u32 = 7;
+const DEBUG_MODES: u32 = 8;
 
 impl AppState {
     async fn new(
@@ -84,8 +84,13 @@ impl AppState {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
-                required_limits: Default::default(),
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                    | wgpu::Features::TEXTURE_BINDING_ARRAY
+                    | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+                required_limits: Limits {
+                    max_binding_array_elements_per_shader_stage: 2,
+                    ..Default::default()
+                },
                 memory_hints: Default::default(),
                 trace: Default::default(),
             })
@@ -114,9 +119,9 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         let params = Params {
-            width: 600,
-            height: 400,
-            number_of_bounces: 1,
+            width: 1920,
+            height: 1080,
+            number_of_bounces: 5,
             rays_per_pixel: 1,
             skybox: 1,
             frames: 0,
@@ -138,11 +143,12 @@ impl AppState {
             wgpu::TextureFormat::Rgba32Float,
         );
 
-        let scene = Scene::sponza(&surface_config).await;
-
-        let ray_tracer = RayTracer::new(&device, &texture, &params_buffer);
-
+        let mut ray_tracer = RayTracer::new(&device, &queue, &texture, &params_buffer);
         let mut egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
+
+        ray_tracer.load_texture(&queue, "earthmap.png".to_string());
+        let scene = Scene::texture_test(&surface_config);
+
         let renderer = Renderer::new(
             &device,
             &mut egui_renderer.renderer,

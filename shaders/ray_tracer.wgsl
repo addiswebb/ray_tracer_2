@@ -22,6 +22,7 @@ struct Material {
     specular: f32,
     ior: f32,
     flag: i32,
+    texture_index: u32,
 }
 
 struct Sphere {
@@ -66,11 +67,17 @@ struct BVHNode {
 
 struct Triangle {
     v1: vec3<f32>,
+    u10: f32,
     v2: vec3<f32>,
+    u11: f32,
     v3: vec3<f32>,
+    u20: f32,
     n1: vec3<f32>,
+    u21: f32,
     n2: vec3<f32>,
+    u30: f32,
     n3: vec3<f32>,
+    u31: f32,
 }
 
 struct FragInput {
@@ -91,6 +98,7 @@ struct Hit {
     dst: f32,
     hit_point: vec3<f32>,
     normal: vec3<f32>,
+    uv: vec2<f32>,
     backface: bool,
     material: Material,
 }
@@ -109,6 +117,10 @@ var<storage,read> triangles: array<Triangle>;
 var<storage,read> meshes: array<Mesh>;
 @group(0) @binding(6)
 var<storage,read> nodes: array<BVHNode>;
+@group(1) @binding(0)
+var textures: binding_array<texture_2d<f32>>;
+@group(1) @binding(1)
+var samplers: binding_array<sampler>;
 
 const SKY_HORIZON: vec4<f32> = vec4<f32>(1.0, 1.0, 1.0, 0.0);
 const SKY_ZENITH: vec4<f32> = vec4<f32>(0.0788092, 0.36480793, 0.7264151, 0.0);
@@ -118,6 +130,7 @@ const SUN_FOCUS: f32 = 500.0;
 const EPSILON: f32 = 1e-5;
 const INF: f32 = 0x1p+127f;  // Hexadecimal float literal
 const MATERIAL_GLASS: i32 = 1;
+const MATERIAL_TEXTURE: i32 = 2;
 
 @compute
 @workgroup_size(8,8)
@@ -223,6 +236,10 @@ fn ray_sphere(ray: Ray, centre: vec3<f32>, radius: f32, cull_backface: bool) -> 
             hit.hit_point = ray.origin + ray.dir * hit.dst;
             hit.normal = select(normalize(hit.hit_point - centre), -normalize(hit.hit_point - centre), is_inside);
             hit.backface = is_inside;
+            let theta = acos(-hit.normal.y);
+            let pi = 3.1415926;
+            let phi = atan2(-hit.normal.z, -hit.normal.x) + pi;
+            hit.uv = vec2(phi / (2.0 * pi), theta / pi);
         }
     }
 
@@ -257,6 +274,7 @@ fn ray_triangle(ray: Ray, tri: Triangle, cull_backface: bool) -> Hit {
         hit.backface = determinant < 0.0;
         hit.hit_point = ray.origin + ray.dir * dst;
         hit.dst = dst;
+        hit.uv = vec2(tri.u10, tri.u11) * w + vec2(tri.u20, tri.u21) * u + vec2(tri.u30, tri.u31) * v;
     }
 
     return hit;
@@ -360,6 +378,7 @@ fn calculate_ray_collions(ray: Ray, stats: ptr<function, vec2<i32>>) -> Hit {
                 closest_hit.hit_point = world_hit_point;
                 closest_hit.dst = world_dst;
                 closest_hit.material = mesh.material;
+                closest_hit.uv = hit.uv;
             }
         }
     }
@@ -413,11 +432,13 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
             let emitted_light = hit.material.emission_color * hit.material.emission_strength;
             ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
             incoming_light += emitted_light * ray.transmittance;
-            if is_specular_bounce {
-                ray.transmittance *= hit.material.specular_color;
+            var color: vec4<f32>;
+            if hit.material.flag == MATERIAL_TEXTURE {
+                color = textureSampleLevel(textures[hit.material.texture_index], samplers[0], hit.uv, 0.0);
             } else {
-                ray.transmittance *= hit.material.color;
+                color = hit.material.color;
             }
+            ray.transmittance *= select(color, hit.material.specular_color, is_specular_bounce);
         }
 
         let p = max(ray.transmittance.r, max(ray.transmittance.g, ray.transmittance.b));
@@ -517,6 +538,10 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
             } else {
                 return vec4(d, d, d, 1.0);
             }
+        }
+        case 8: {
+            if !hit.hit {return vec4<f32>(0.0); }
+            return vec4(hit.uv, 0.0, 1.0);
         }
     default: {
             return vec4<f32>(1.0, 0.0, 1.0, 1.0);

@@ -1,17 +1,13 @@
-use std::{
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use egui_wgpu::wgpu::{
-    self, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, MapMode, Origin3d,
+    self, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, Origin3d,
     TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureAspect, TextureView,
 };
-use image::{ImageBuffer, Rgba32FImage};
+use image::ImageBuffer;
 
 pub struct Texture {
     texture: egui_wgpu::wgpu::Texture,

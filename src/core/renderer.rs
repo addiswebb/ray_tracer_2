@@ -110,7 +110,6 @@ impl Renderer {
         renderer.callback_resources.insert(RendererResource {
             pipeline,
             bind_group,
-            bind_group_layout,
         });
 
         Some(Self {})
@@ -127,23 +126,11 @@ impl Renderer {
         ));
         response.clicked()
     }
-    #[allow(unused)]
-    pub fn update_bind_group(
-        &self,
-        device: &wgpu::Device,
-        texture: &Texture,
-        params_buffer: &wgpu::Buffer,
-        renderer: &mut egui_wgpu::Renderer,
-    ) {
-        let resource: &mut RendererResource = renderer.callback_resources.get_mut().unwrap();
-        resource.update_bind_group(device, texture, params_buffer);
-    }
 }
 
 pub struct RendererResource {
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
-    bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl RendererResource {
@@ -151,27 +138,6 @@ impl RendererResource {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.draw(0..6, 0..1);
-    }
-    pub fn update_bind_group(
-        &mut self,
-        device: &wgpu::Device,
-        texture: &Texture,
-        params_buffer: &wgpu::Buffer,
-    ) {
-        self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Renderer Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: texture.binding_resource(),
-                },
-            ],
-        });
     }
 }
 

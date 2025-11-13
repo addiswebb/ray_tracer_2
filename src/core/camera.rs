@@ -11,8 +11,6 @@ use winit::{
 };
 
 use crate::core::mesh::Transform;
-const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
-const SAFE_FRAC_PI_2_DEG: f32 = SAFE_FRAC_PI_2 * (180.0 / std::f32::consts::PI);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
@@ -60,7 +58,7 @@ impl Default for CameraDescriptor {
             aspect: 16.0 / 9.0,
             near: 0.01,
             far: 1000.0,
-            focus_dist: 0.0,
+            focus_dist: 1.0,
             defocus_strength: 0.0,
             diverge_strength: 0.0,
         }
@@ -75,13 +73,14 @@ impl Camera {
             aspect: 16.0 / 9.0,
             near: camera_descriptor.near,
             far: camera_descriptor.far,
-            focus_dist: camera_descriptor.focus_dist,
+            focus_dist: camera_descriptor.focus_dist.min(1.0),
             controller: CameraController::new(10.0, 1.8),
             defocus_strength: camera_descriptor.defocus_strength,
             diverge_strength: camera_descriptor.diverge_strength,
         }
     }
     pub fn to_uniform(&self) -> CameraUniform {
+        assert!(self.focus_dist != 0.0, "Focus Distance cannot be zero");
         let plane_height = self.focus_dist * (self.fov * 0.5).to_radians().tan() * 2.0;
         let plane_width = plane_height * self.aspect;
         CameraUniform {
@@ -99,7 +98,7 @@ impl Camera {
         if self.controller.rotate_horizontal != 0.0 || self.controller.rotate_vertical != 0.0 {
             let (mut yaw, mut pitch, _roll) = self.transform.rot.to_euler(EulerRot::YXZ);
 
-            yaw += self.controller.rotate_horizontal * scalar; 
+            yaw += self.controller.rotate_horizontal * scalar;
             pitch += self.controller.rotate_vertical * scalar;
 
             // Clamp pitch to avoid flipping

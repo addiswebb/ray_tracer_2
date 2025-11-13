@@ -1,12 +1,12 @@
-use std::mem;
+use std::{fs::File, io::Read, mem, num::NonZeroU32};
 
-use egui_wgpu::wgpu::{self, PipelineCompilationOptions};
+use egui_wgpu::wgpu::{self, Extent3d, PipelineCompilationOptions, wgt::TextureViewDescriptor};
 
 use crate::core::{
     app::Params,
     bvh::{BVH, Node, PackedTriangle},
     mesh::{MeshUniform, Sphere},
-    scene::{Scene, SceneUniform},
+    scene::{FILE, Scene, SceneUniform},
     texture::Texture,
 };
 
@@ -14,24 +14,34 @@ const WORKGROUP_SIZE: (u32, u32) = (8, 8);
 const MAX_MESHES: u64 = 400;
 const MAX_SPHERS: u64 = 500;
 const MAX_TRIANGLES: u64 = 275000;
+const MAX_TEXTURES: u64 = 2;
+
+const TEXTURE_SIZE: (u32, u32) = (1024, 512);
 
 pub struct RayTracer {
     pub pipeline: wgpu::ComputePipeline,
     pub bind_group: wgpu::BindGroup,
+    pub textures_bind_group: wgpu::BindGroup,
     pub sphere_buffer: wgpu::Buffer,
     pub triangle_buffer: wgpu::Buffer,
     pub mesh_buffer: wgpu::Buffer,
     pub scene_buffer: wgpu::Buffer,
     pub bvh_nodes_buffer: wgpu::Buffer,
+    pub textures: Vec<wgpu::Texture>,
+    pub n_textures: u32,
 }
 
 impl RayTracer {
-    pub fn new(device: &wgpu::Device, texture: &Texture, params_buffer: &wgpu::Buffer) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        texture: &Texture,
+        params_buffer: &wgpu::Buffer,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("RayTracer Compute Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../../shaders/ray_tracer.wgsl").into()),
         });
-
         let bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("RayTracer Bind Group Layout"),
@@ -113,6 +123,31 @@ impl RayTracer {
                     },
                 ],
             });
+        let textures_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("RayTracer Textures Bind Group Layout"),
+                entries: &[
+                    // Textures
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: NonZeroU32::new(MAX_TEXTURES as u32),
+                    },
+                    // Sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
         let scene_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Raytracer Scene Buffer"),
             size: std::mem::size_of::<SceneUniform>() as wgpu::BufferAddress,
@@ -145,6 +180,40 @@ impl RayTracer {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
+        let t1 = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("t1"),
+            size: Extent3d {
+                width: TEXTURE_SIZE.0,
+                height: TEXTURE_SIZE.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let t2 = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("t2"),
+            size: Extent3d {
+                width: TEXTURE_SIZE.0,
+                height: TEXTURE_SIZE.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let t1_view = t1.create_view(&TextureViewDescriptor::default());
+        let t2_view = t2.create_view(&TextureViewDescriptor::default());
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("RayTracer Bind Group"),
             layout: &bind_group_layout,
@@ -179,10 +248,24 @@ impl RayTracer {
                 },
             ],
         });
+        let textures_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("RayTracer Textures Bind Group"),
+            layout: &textures_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureViewArray(&[&t1_view, &t2_view]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("RayTracer Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout, &textures_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -197,11 +280,14 @@ impl RayTracer {
         Self {
             pipeline,
             bind_group,
+            textures_bind_group,
             triangle_buffer,
             sphere_buffer,
             mesh_buffer,
             scene_buffer,
             bvh_nodes_buffer,
+            textures: vec![t1, t2],
+            n_textures: 0,
         }
     }
     pub fn update_buffers(&mut self, queue: &wgpu::Queue, scene: &mut Scene) {
@@ -239,6 +325,36 @@ impl RayTracer {
 
         compute_pass.set_pipeline(&self.pipeline);
         compute_pass.set_bind_group(0, &self.bind_group, &[]);
+        compute_pass.set_bind_group(1, &self.textures_bind_group, &[]);
         compute_pass.dispatch_workgroups(xgroups, ygroups, 1);
+    }
+
+    pub fn load_texture(&mut self, queue: &wgpu::Queue, path: String) -> u32 {
+        let mut buffer = vec![];
+        let file_path = std::path::Path::new(FILE).join("assets").join(path);
+        File::open(file_path)
+            .unwrap()
+            .read_to_end(&mut buffer)
+            .unwrap();
+        let mut image = image::load_from_memory(&buffer).unwrap();
+        image::imageops::flip_vertical_in_place(&mut image);
+        let data = image.to_rgba8();
+
+        queue.write_texture(
+            self.textures[self.n_textures as usize].as_image_copy(),
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(TEXTURE_SIZE.0 * 4),
+                rows_per_image: Some(TEXTURE_SIZE.1),
+            },
+            Extent3d {
+                width: TEXTURE_SIZE.0,
+                height: TEXTURE_SIZE.1,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.n_textures += 1;
+        self.n_textures
     }
 }

@@ -82,27 +82,6 @@ impl Scene {
             .extend(load_model_obj(path, transform, material).await);
     }
 
-    pub fn vertices_and_indices(&self) -> (Vec<Vertex>, Vec<u32>) {
-        let mut vertices: Vec<Vertex> =
-            Vec::with_capacity(self.meshes.iter().map(|m| m.vertices.len()).sum());
-        let mut indices: Vec<u32> =
-            Vec::with_capacity(self.meshes.iter().map(|m| m.indices.len()).sum());
-
-        for mesh in &self.meshes {
-            let vertex_offset = vertices.len() as u32;
-            for v in &mesh.vertices {
-                let p = mesh.transform.to_matrix()
-                    * Vec4::from_array([v.pos[0], v.pos[1], v.pos[2], 1.0]);
-                vertices.push(Vertex {
-                    pos: Vec3::from_array([p[0], p[1], p[2]]),
-                    normal: v.normal,
-                });
-            }
-            indices.extend(mesh.indices.iter().map(|i| i + vertex_offset));
-        }
-        (vertices, indices)
-    }
-
     pub async fn obj_test(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
 
@@ -201,6 +180,36 @@ impl Scene {
 
         scene.meshes.extend(mesh);
 
+        scene
+    }
+    pub fn texture_test(config: &wgpu::SurfaceConfiguration) -> Self {
+        let mut scene = Scene::new(config);
+
+        scene.set_camera(&CameraDescriptor {
+            transform: Transform::cam(Vec3::new(0.0, 1.28, 13.5), Vec3::new(0.0, 1.28, 12.5)),
+            fov: 45.0,
+            aspect: config.width as f32 / config.height as f32,
+            near: 0.1,
+            far: 100.0,
+            ..Default::default()
+        });
+
+        // scene.add_mesh(Mesh {
+        //     label: Some("Back Wall".to_string()),
+        //     transform: Transform::default(),
+        //     material: Material::new().color([1.0, 1.0, 1.0, 1.0]).texture(0),
+        //     vertices: Mesh::quad(Transform {
+        //         pos: Vec3::new(0.0, 0.0, -2.0),
+        //         rot: Quat::IDENTITY,
+        //         scale: Vec3::new(3.0, 3.0, 1.0),
+        //     }),
+        //     indices: vec![0, 1, 2, 0, 2, 3],
+        // });
+        scene.add_sphere(Sphere::new(
+            Vec3::new(0.0, 0.0, 3.0),
+            1.0,
+            Material::new().specular([1.0; 4], 0.2).texture(0),
+        ));
         scene
     }
     pub fn random_balls(config: &wgpu::SurfaceConfiguration) -> Self {
@@ -589,7 +598,7 @@ impl Scene {
                 specular: 0.517,
                 ior: 1.6,
                 flag: 1,
-                _p1: [0.0; 2],
+                ..Default::default()
             },
         ));
         // scene
@@ -716,7 +725,7 @@ impl Scene {
     pub async fn sponza(config: &wgpu::SurfaceConfiguration) -> Self {
         let mut scene = Scene::new(config);
         scene.set_camera(&CameraDescriptor {
-            transform: Transform::cam(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0)),
+            transform: Transform::cam(Vec3::new(8.0, 12.0, 10.5), Vec3::new(9.0, 12.0, 10.0)),
             fov: 45.0,
             aspect: config.width as f32 / config.height as f32,
             near: 0.1,
@@ -737,9 +746,9 @@ impl Scene {
             )
             .await;
         scene.add_sphere(Sphere {
-            pos: [0.0, 1.0, 0.0],
-            radius: 2.0,
-            material: Material::default().emissive([1.0; 4], 40.0),
+            pos: [-15.78, 16.4, 8.25],
+            radius: 1.0,
+            material: Material::default().emissive([1.0; 4], 5.0),
         });
         scene
     }
@@ -762,7 +771,7 @@ impl Scene {
     }
 }
 
-const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"));
+pub const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"));
 
 pub async fn load_string(path: &Path) -> anyhow::Result<String> {
     assert!(
@@ -830,9 +839,6 @@ pub async fn load_model_obj(path: &Path, transform: Transform, material: Materia
             vertices,
             indices,
         });
-        if i > 10 {
-            return meshes;
-        }
     }
 
     return meshes;

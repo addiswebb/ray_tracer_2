@@ -16,34 +16,34 @@ pub struct BVHTriangle {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct PackedTriangle {
     pub v1: [f32; 3],
-    pub _p1: f32,
+    pub uv10: f32,
     pub v2: [f32; 3],
-    pub _p2: f32,
+    pub uv11: f32,
     pub v3: [f32; 3],
-    pub _p3: f32,
+    pub uv20: f32,
     pub n1: [f32; 3],
-    pub _p4: f32,
+    pub uv21: f32,
     pub n2: [f32; 3],
-    pub _p5: f32,
+    pub uv30: f32,
     pub n3: [f32; 3],
-    pub _p6: f32,
+    pub uv31: f32,
 }
 
 impl PackedTriangle {
-    pub fn new(v1: Vec3, v2: Vec3, v3: Vec3, n1: Vec3, n2: Vec3, n3: Vec3) -> Self {
+    pub fn new(v1: Vertex, v2: Vertex, v3: Vertex) -> Self {
         Self {
-            v1: v1.to_array(),
-            v2: v2.to_array(),
-            v3: v3.to_array(),
-            n1: n1.to_array(),
-            n2: n2.to_array(),
-            n3: n3.to_array(),
-            _p1: 1.0,
-            _p2: 1.0,
-            _p3: 1.0,
-            _p4: 1.0,
-            _p5: 1.0,
-            _p6: 1.0,
+            v1: v1.pos.to_array(),
+            v2: v2.pos.to_array(),
+            v3: v3.pos.to_array(),
+            n1: v1.normal.to_array(),
+            n2: v2.normal.to_array(),
+            n3: v3.normal.to_array(),
+            uv10: v1.uv[0],
+            uv11: v1.uv[1],
+            uv20: v2.uv[0],
+            uv21: v2.uv[1],
+            uv30: v3.uv[0],
+            uv31: v3.uv[1],
         }
     }
 }
@@ -246,14 +246,8 @@ impl BVH {
             let vert1 = vertices[indices[built_tri.i as usize + 0] as usize];
             let vert2 = vertices[indices[built_tri.i as usize + 1] as usize];
             let vert3 = vertices[indices[built_tri.i as usize + 2] as usize];
-            bvh.packed_triangles.push(PackedTriangle::new(
-                vert1.pos,
-                vert2.pos,
-                vert3.pos,
-                vert1.normal,
-                vert2.normal,
-                vert3.normal,
-            ));
+            bvh.packed_triangles
+                .push(PackedTriangle::new(vert1, vert2, vert3));
         }
         bvh
     }

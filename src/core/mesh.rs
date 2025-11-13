@@ -4,11 +4,19 @@ use glam::{Mat4, Quat, Vec3};
 pub struct Vertex {
     pub pos: Vec3,
     pub normal: Vec3,
+    pub uv: [f32; 2],
 }
 
 impl Vertex {
     pub fn new(pos: Vec3, normal: Vec3) -> Self {
-        Self { pos, normal }
+        Self {
+            pos,
+            normal,
+            uv: [0.0; 2],
+        }
+    }
+    pub fn with_uv(pos: Vec3, normal: Vec3, uv: [f32; 2]) -> Self {
+        Self { pos, normal, uv }
     }
 }
 
@@ -30,6 +38,12 @@ impl Sphere {
     }
 }
 
+enum MATERIAL_FLAG {
+    NORMAL = 0,
+    GLASS = 1,
+    TEXTURE = 2,
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Material {
@@ -43,7 +57,8 @@ pub struct Material {
     pub specular: f32,
     pub ior: f32,
     pub flag: i32,
-    pub _p1: [f32; 2],
+    pub texture_index: u32,
+    pub _p1: f32,
 }
 
 impl Material {
@@ -59,12 +74,12 @@ impl Material {
             specular: 0.1,
             ior: 0.0,
             flag: 0,
-            _p1: [0.0; 2],
+            texture_index: 0,
+            _p1: 0.0,
         }
     }
     pub fn color(&mut self, color: [f32; 4]) -> Self {
         self.color = color;
-        self.specular_color = color;
         *self
     }
 
@@ -76,7 +91,7 @@ impl Material {
     #[allow(unused)]
     pub fn glass(&mut self, index_of_refraction: f32) -> Self {
         self.ior = index_of_refraction;
-        self.flag = 1;
+        self.flag = MATERIAL_FLAG::GLASS as i32;
         self.smoothness = 1.0;
         *self
     }
@@ -88,6 +103,11 @@ impl Material {
     }
     pub fn smooth(&mut self, smoothness: f32) -> Self {
         self.smoothness = smoothness;
+        *self
+    }
+    pub fn texture(&mut self, i: u32) -> Self {
+        self.texture_index = i;
+        self.flag = MATERIAL_FLAG::TEXTURE as i32;
         *self
     }
 }
@@ -135,6 +155,21 @@ impl Mesh {
     pub fn material(&mut self, material: Material) -> &Self {
         self.material = material;
         self
+    }
+
+    pub fn quad(t: Transform) -> Vec<Vertex> {
+        let mut vertices = vec![
+            Vertex::with_uv(Vec3::new(-1.0, -1.0, 0.0), Vec3::Z, [0.0, 0.0]),
+            Vertex::with_uv(Vec3::new(1.0, -1.0, 0.0), Vec3::Z, [1.0, 0.0]),
+            Vertex::with_uv(Vec3::new(1.0, 1.0, 0.0), Vec3::Z, [1.0, 1.0]),
+            Vertex::with_uv(Vec3::new(-1.0, 1.0, 0.0), Vec3::Z, [0.0, 1.0]),
+        ];
+        for v in &mut vertices {
+            v.pos += t.pos;
+            v.normal = t.rot * v.normal;
+            v.pos = t.rot * v.pos;
+        }
+        vertices
     }
 }
 
