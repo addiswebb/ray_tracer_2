@@ -1,17 +1,19 @@
-use std::mem;
+use std::{mem, sync::Arc};
 
-use egui_wgpu::wgpu;
+use egui_wgpu::wgpu::{self, TextureView};
 use wgpu::PipelineCompilationOptions;
 
-use crate::core::{app::Params, texture::Texture};
+use crate::core::app::Params;
 
-pub struct Renderer {}
+pub struct Renderer {
+    device: Arc<wgpu::Device>,
+}
 
 impl Renderer {
     pub fn new<'a>(
-        device: &wgpu::Device,
+        device: Arc<wgpu::Device>,
         renderer: &mut egui_wgpu::Renderer,
-        texture: &Texture,
+        texture_view: &TextureView,
         surface_config: &wgpu::SurfaceConfiguration,
         params_buffer: &wgpu::Buffer,
     ) -> Option<Self> {
@@ -51,7 +53,7 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: texture.binding_resource(),
+                    resource: wgpu::BindingResource::TextureView(texture_view),
                 },
             ],
         });
@@ -112,7 +114,7 @@ impl Renderer {
             bind_group,
         });
 
-        Some(Self {})
+        Some(Self { device })
     }
     pub fn render_ray_traced_image(&mut self, ui: &mut egui::Ui) -> bool {
         let (rect, response) = ui.allocate_exact_size(

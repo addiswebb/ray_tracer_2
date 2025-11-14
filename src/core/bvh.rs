@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use glam::Vec3;
 
@@ -159,7 +159,12 @@ impl BVH {
             };
             if !mesh_lookup.contains_key(&key) {
                 mesh_lookup.insert(key.clone(), (data.nodes.len(), data.triangles.len()));
-                let mut bvh = BVH::build(&mesh.vertices, &mesh.indices, quality, &mut stats);
+                let mut bvh = BVH::build(
+                    mesh.vertices.clone(),
+                    mesh.indices.clone(),
+                    quality,
+                    &mut stats,
+                );
                 data.triangles.append(&mut bvh.packed_triangles);
                 data.nodes.append(&mut bvh.nodes);
             }
@@ -179,8 +184,8 @@ impl BVH {
         data
     }
     pub fn build(
-        vertices: &Vec<Vertex>,
-        indices: &Vec<u32>,
+        vertices: Arc<Vec<Vertex>>,
+        indices: Arc<Vec<u32>>,
         quality: Quality,
         stats: &mut BVHStats,
     ) -> Self {

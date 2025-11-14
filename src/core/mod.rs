@@ -1,4 +1,5 @@
 pub mod app;
+pub mod asset;
 pub mod bvh;
 pub mod camera;
 pub mod egui;

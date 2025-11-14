@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use egui::Context;
 use egui_wgpu::{
     Renderer, ScreenDescriptor,
@@ -7,6 +9,7 @@ use egui_winit::State;
 use winit::{event::WindowEvent, window::Window};
 
 pub struct EguiRenderer {
+    device: Arc<wgpu::Device>,
     state: State,
     pub renderer: Renderer,
     frame_started: bool,
@@ -18,7 +21,7 @@ impl EguiRenderer {
     }
 
     pub fn new(
-        device: &Device,
+        device: Arc<wgpu::Device>,
         output_color_format: TextureFormat,
         output_depth_format: Option<TextureFormat>,
         msaa_samples: u32,
@@ -35,13 +38,14 @@ impl EguiRenderer {
         );
 
         let renderer = Renderer::new(
-            device,
+            device.clone().as_ref(),
             output_color_format,
             output_depth_format,
             msaa_samples,
             true,
         );
         EguiRenderer {
+            device,
             state,
             renderer,
             frame_started: false,

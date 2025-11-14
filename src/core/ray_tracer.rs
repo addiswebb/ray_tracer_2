@@ -1,24 +1,27 @@
-use std::{fs::File, io::Read, mem, num::NonZeroU32};
+use std::{fs::File, io::Read, mem, num::NonZeroU32, sync::Arc};
 
-use egui_wgpu::wgpu::{self, Extent3d, PipelineCompilationOptions, wgt::TextureViewDescriptor};
+use egui_wgpu::wgpu::{
+    self, Extent3d, PipelineCompilationOptions, TextureView, wgt::TextureViewDescriptor,
+};
 
 use crate::core::{
     app::Params,
+    asset::FILE,
     bvh::{BVH, Node, PackedTriangle},
     mesh::{MeshUniform, Sphere},
-    scene::{FILE, Scene, SceneUniform},
-    texture::Texture,
+    scene::{Scene, SceneUniform},
 };
 
 const WORKGROUP_SIZE: (u32, u32) = (8, 8);
 const MAX_MESHES: u64 = 400;
 const MAX_SPHERS: u64 = 500;
 const MAX_TRIANGLES: u64 = 275000;
-const MAX_TEXTURES: u64 = 2;
+pub const MAX_TEXTURES: u64 = 2;
 
-const TEXTURE_SIZE: (u32, u32) = (1024, 512);
+const TEXTURE_SIZE: (u32, u32) = (1024, 1024);
 
 pub struct RayTracer {
+    pub device: Arc<wgpu::Device>,
     pub pipeline: wgpu::ComputePipeline,
     pub bind_group: wgpu::BindGroup,
     pub textures_bind_group: wgpu::BindGroup,
@@ -33,9 +36,8 @@ pub struct RayTracer {
 
 impl RayTracer {
     pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        texture: &Texture,
+        device: Arc<wgpu::Device>,
+        texture_view: &TextureView,
         params_buffer: &wgpu::Buffer,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -74,7 +76,11 @@ impl RayTracer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: texture.binding_type(wgpu::StorageTextureAccess::ReadWrite),
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::ReadWrite,
+                            format: wgpu::TextureFormat::Rgba32Float,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
                         count: None,
                     },
                     //Spheres
@@ -228,7 +234,7 @@ impl RayTracer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: texture.binding_resource(),
+                    resource: wgpu::BindingResource::TextureView(texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -278,6 +284,7 @@ impl RayTracer {
             cache: None,
         });
         Self {
+            device,
             pipeline,
             bind_group,
             textures_bind_group,

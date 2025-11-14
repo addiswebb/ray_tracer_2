@@ -1,13 +1,21 @@
 use std::{
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use egui_wgpu::{
     ScreenDescriptor,
-    wgpu::{self, Limits, SurfaceError, util::DeviceExt},
+    wgpu::{
+        self, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, Limits, Origin3d,
+        SurfaceError, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo,
+        TextureAspect, TextureView, util::DeviceExt,
+    },
 };
 use glam::Quat;
+use image::ImageBuffer;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -17,12 +25,12 @@ use winit::{
 };
 
 use crate::core::{
+    asset::AssetManager,
     bvh::{self},
     egui::EguiRenderer,
-    ray_tracer::RayTracer,
+    ray_tracer::{MAX_TEXTURES, RayTracer},
     renderer::Renderer,
     scene::Scene,
-    texture::Texture,
 };
 
 #[repr(C)]
@@ -41,8 +49,8 @@ pub struct Params {
 }
 #[allow(unused)]
 pub struct AppState {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub surface: wgpu::Surface<'static>,
     pub scale_factor: f32,
@@ -51,7 +59,8 @@ pub struct AppState {
     pub params: Params,
     pub scene: Scene,
     pub selected_scene: i32,
-    pub texture: Texture,
+    pub texture: wgpu::Texture,
+    pub texture_view: TextureView,
     pub prev_scene: i32,
     pub params_buffer: wgpu::Buffer,
     pub mouse_pressed: bool,
@@ -88,7 +97,7 @@ impl AppState {
                     | wgpu::Features::TEXTURE_BINDING_ARRAY
                     | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
                 required_limits: Limits {
-                    max_binding_array_elements_per_shader_stage: 2,
+                    max_binding_array_elements_per_shader_stage: MAX_TEXTURES as u32,
                     ..Default::default()
                 },
                 memory_hints: Default::default(),
@@ -136,23 +145,38 @@ impl AppState {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let texture = Texture::new(
-            &device,
-            params.width,
-            params.height,
-            wgpu::TextureFormat::Rgba32Float,
-        );
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Render Texture"),
+            size: wgpu::Extent3d {
+                width: params.width,
+                height: params.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut ray_tracer = RayTracer::new(&device, &queue, &texture, &params_buffer);
-        let mut egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
 
-        ray_tracer.load_texture(&queue, "earthmap.png".to_string());
-        let scene = Scene::texture_test(&surface_config);
+        let mut ray_tracer = RayTracer::new(device.clone(), &texture_view, &params_buffer);
+        let mut egui_renderer =
+            EguiRenderer::new(device.clone(), surface_config.format, None, 1, window);
+
+        let mut asset_manager = AssetManager::new(device.clone(), queue.clone());
+        let scene = Scene::instantiate_scene(&Scene::room_2().await, &mut asset_manager).await;
 
         let renderer = Renderer::new(
-            &device,
+            device.clone(),
             &mut egui_renderer.renderer,
-            &texture,
+            &texture_view,
             &surface_config,
             &params_buffer,
         )
@@ -168,6 +192,7 @@ impl AppState {
             params,
             scene,
             texture,
+            texture_view,
             scale_factor: 1.0,
             selected_scene: 0,
             params_buffer,
@@ -259,21 +284,22 @@ impl App {
         }
         if state.selected_scene != state.prev_scene {
             log::info!("Changing Scene: {}", state.selected_scene);
-            match state.selected_scene {
-                0 => {
-                    state.scene = Scene::balls(&state.surface_config);
-                }
-                1 => {
-                    state.scene = Scene::room(&state.surface_config);
-                }
-                2 => {
-                    state.scene = Scene::metal(&state.surface_config);
-                }
-                3 => {
-                    state.scene = Scene::random_balls(&state.surface_config);
-                }
-                _ => (),
-            }
+            // Todo: Make this work with new thing
+            // match state.selected_scene {
+            //     0 => {
+            //         state.scene = Scene::balls();
+            //     }
+            //     1 => {
+            //         state.scene = Scene::room();
+            //     }
+            //     2 => {
+            //         state.scene = Scene::metal();
+            //     }
+            //     3 => {
+            //         state.scene = Scene::random_balls();
+            //     }
+            //     _ => (),
+            // }
             state.prev_scene = state.selected_scene;
         }
         state.queue.write_buffer(
@@ -334,14 +360,13 @@ impl App {
                 KeyCode::KeyP => {
                     if key_state.is_pressed() {
                         println!("Saving Render to file");
-                        state
-                            .texture
-                            .save_to_file(
-                                &state.device,
-                                &state.queue,
-                                "C:/users/addis/downloads/test.png".to_string(),
-                            )
-                            .unwrap();
+                        let _ = App::save_render_to_file(
+                            &state.texture,
+                            &state.device,
+                            &state.queue,
+                            "C:/users/addis/downloads/test.png".to_string(),
+                        )
+                        .unwrap();
                     }
                     true
                 }
@@ -831,6 +856,133 @@ impl App {
 
         state.queue.submit(Some(encoder.finish()));
         surface_texture.present();
+    }
+    pub fn save_render_to_file(
+        texture: &wgpu::Texture,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        path: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let width = 1920;
+        let height = 1080;
+
+        // Calculate aligned bytes per row (wgpu requires 256-byte alignment)
+        let bytes_per_pixel = 16; // RGBA
+        let unpadded_bytes_per_row = width * bytes_per_pixel;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as u32;
+        let bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
+        let buffer_size = (bytes_per_row * height) as wgpu::BufferAddress;
+
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("Final Render Buffer"),
+            size: buffer_size,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("Final Render Encoder"),
+        });
+
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let buffer_slice = buffer.slice(..);
+
+        let map_complete = Arc::new(AtomicBool::new(false));
+        let map_error = Arc::new(std::sync::Mutex::new(None));
+
+        let map_complete_clone = Arc::clone(&map_complete);
+        let map_error_clone = Arc::clone(&map_error);
+
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| match result {
+            Ok(()) => map_complete_clone.store(true, Ordering::SeqCst),
+            Err(e) => *map_error_clone.lock().unwrap() = Some(e),
+        });
+
+        while !map_complete.load(Ordering::SeqCst) {
+            device.poll(wgpu::MaintainBase::Wait)?;
+            if let Some(err) = map_error.lock().unwrap().take() {
+                return Err(Box::new(err));
+            }
+        }
+
+        let data = buffer_slice.get_mapped_range();
+        let mut image_data = Vec::with_capacity((width * height * 4) as usize);
+
+        for y in 0..height {
+            let row_start = (y * bytes_per_row) as usize;
+
+            for x in (0..width).rev() {
+                let pixel_start = row_start + (x * bytes_per_pixel) as usize;
+
+                let r = f32::from_ne_bytes([
+                    data[pixel_start],
+                    data[pixel_start + 1],
+                    data[pixel_start + 2],
+                    data[pixel_start + 3],
+                ]);
+                let g = f32::from_ne_bytes([
+                    data[pixel_start + 4],
+                    data[pixel_start + 5],
+                    data[pixel_start + 6],
+                    data[pixel_start + 7],
+                ]);
+                let b = f32::from_ne_bytes([
+                    data[pixel_start + 8],
+                    data[pixel_start + 9],
+                    data[pixel_start + 10],
+                    data[pixel_start + 11],
+                ]);
+                let a = f32::from_ne_bytes([
+                    data[pixel_start + 12],
+                    data[pixel_start + 13],
+                    data[pixel_start + 14],
+                    data[pixel_start + 15],
+                ]);
+
+                let r_byte = (r.powf(1.0 / 2.2).clamp(0.0, 1.0) * 255.0) as u8;
+                let g_byte = (g.powf(1.0 / 2.2).clamp(0.0, 1.0) * 255.0) as u8;
+                let b_byte = (b.powf(1.0 / 2.2).clamp(0.0, 1.0) * 255.0) as u8;
+                let a_byte = (a.powf(1.0 / 2.2).clamp(0.0, 1.0) * 255.0) as u8;
+
+                image_data.push(r_byte);
+                image_data.push(g_byte);
+                image_data.push(b_byte);
+                image_data.push(a_byte);
+            }
+        }
+
+        let mut image = ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, image_data)
+            .ok_or("Failed to create image from buffer")
+            .unwrap();
+        image::imageops::flip_horizontal_in_place(&mut image);
+        image::imageops::flip_vertical_in_place(&mut image);
+        image.save(path.clone()).unwrap();
+        drop(data);
+        buffer.unmap();
+        println!("Saved Render to {}", path);
+        Ok(())
     }
 }
 

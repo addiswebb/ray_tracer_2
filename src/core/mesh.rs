@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::{Mat4, Quat, Vec3};
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -38,12 +40,6 @@ impl Sphere {
     }
 }
 
-enum MATERIAL_FLAG {
-    NORMAL = 0,
-    GLASS = 1,
-    TEXTURE = 2,
-}
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Material {
@@ -78,38 +74,6 @@ impl Material {
             _p1: 0.0,
         }
     }
-    pub fn color(&mut self, color: [f32; 4]) -> Self {
-        self.color = color;
-        *self
-    }
-
-    pub fn emissive(&mut self, color: [f32; 4], strength: f32) -> Self {
-        self.emission_color = color;
-        self.emission_strength = strength;
-        *self
-    }
-    #[allow(unused)]
-    pub fn glass(&mut self, index_of_refraction: f32) -> Self {
-        self.ior = index_of_refraction;
-        self.flag = MATERIAL_FLAG::GLASS as i32;
-        self.smoothness = 1.0;
-        *self
-    }
-    #[allow(unused)]
-    pub fn specular(&mut self, color: [f32; 4], specular: f32) -> Self {
-        self.specular_color = color;
-        self.specular = specular;
-        *self
-    }
-    pub fn smooth(&mut self, smoothness: f32) -> Self {
-        self.smoothness = smoothness;
-        *self
-    }
-    pub fn texture(&mut self, i: u32) -> Self {
-        self.texture_index = i;
-        self.flag = MATERIAL_FLAG::TEXTURE as i32;
-        *self
-    }
 }
 
 #[allow(unused)]
@@ -117,8 +81,8 @@ impl Material {
 pub struct Mesh {
     pub label: Option<String>,
     pub transform: Transform,
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
+    pub vertices: Arc<Vec<Vertex>>,
+    pub indices: Arc<Vec<u32>>,
     pub material: Material,
 }
 
