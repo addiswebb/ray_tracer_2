@@ -167,7 +167,6 @@ impl AssetManager {
         }
     }
     pub fn load_texture(&mut self, path: &String) -> TextureRef {
-        println!("Loading Texture: {}", path);
         if self.loaded_textures.len() == MAX_TEXTURES as usize {
             panic!("Cannot load more than {} textures", MAX_TEXTURES);
         }
@@ -182,7 +181,6 @@ impl AssetManager {
             .read_to_end(&mut buffer)
             .unwrap();
         let image = image::imageops::flip_horizontal(&image::load_from_memory(&buffer).unwrap());
-        println!("Image dimensions {} {}", image.width(), image.height());
 
         let index = self.loaded_textures.len();
 
@@ -218,7 +216,6 @@ impl AssetManager {
         transform: Transform,
         load_materials: bool,
     ) -> Vec<MeshInstance> {
-        println!("Loading model: {}", path);
         let mut meshes: Vec<MeshInstance> = vec![];
         let mut material_defs: Vec<Material> = vec![];
         let file_path = std::path::Path::new(FILE).join("assets").join(path);
@@ -254,8 +251,6 @@ impl AssetManager {
                     color: [color[0], color[1], color[2], 1.0],
                     emission_color: [color[0], color[1], color[2], 1.0],
                     specular_color: [spec[0], spec[1], spec[2], 1.0],
-                    absorption: [0.0; 4],
-                    absorption_stength: 0.0,
                     emission_strength: 0.0,
                     smoothness: 0.0,
                     specular: 0.05,
@@ -265,7 +260,7 @@ impl AssetManager {
                     texture_index: texture_ref.index,
                     width: texture_ref.width,
                     height: texture_ref.height,
-                    _p1: [0.0; 3],
+                    ..Default::default()
                 });
             }
         }
@@ -278,11 +273,9 @@ impl AssetManager {
             let mut vertices = vec![];
 
             if let Some(mesh_ref) = self.loaded_meshes.get(&format!("{}_{}", m.name, i)) {
-                println!("Used cached vertices");
                 mesh.vertices = mesh_ref.vertices.clone();
                 mesh.indices = mesh_ref.indices.clone();
             } else {
-                println!("Read new vertices");
                 for (j, &vi) in m.mesh.indices.iter().enumerate() {
                     let pi = vi as usize;
                     let pos = Vec3::new(
@@ -327,7 +320,7 @@ impl AssetManager {
             let material = if load_materials && let Some(id) = m.mesh.material_id {
                 material_defs[id]
             } else {
-                Material::new()
+                Material::default()
             };
             let mesh = Arc::new(mesh);
             self.loaded_meshes

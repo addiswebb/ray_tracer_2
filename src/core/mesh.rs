@@ -41,7 +41,7 @@ impl Sphere {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Material {
     pub color: [f32; 4],
     pub emission_color: [f32; 4],
@@ -58,19 +58,18 @@ pub struct Material {
     pub height: u32,
     pub _p1: [f32; 3],
 }
-
-impl Material {
-    pub fn new() -> Material {
-        Material {
-            color: [1.0, 1.0, 1.0, 1.0],
-            emission_color: [1.0, 1.0, 1.0, 1.0],
-            specular_color: [1.0, 1.0, 1.0, 1.0],
-            absorption: [0.0, 0.0, 0.0, 0.0],
+impl Default for Material {
+    fn default() -> Self {
+        Self {
+            color: [0.7, 0.7, 0.7, 1.0],
+            emission_color: [0.0; 4],
+            specular_color: [0.0; 4],
+            absorption: [0.0; 4],
             absorption_stength: 0.0,
             emission_strength: 0.0,
-            smoothness: 0.0,
-            specular: 0.1,
-            ior: 0.0,
+            smoothness: 0.9,
+            specular: 0.00,
+            ior: 1.0,
             flag: 0,
             texture_index: 0,
             width: 0,

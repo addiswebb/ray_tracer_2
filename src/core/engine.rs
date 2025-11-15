@@ -23,6 +23,7 @@ use crate::core::{
 pub struct TmpResources {
     pub use_mouse: bool,
     pub mouse_pressed: bool,
+    pub fullscreen: bool,
 }
 
 impl Default for TmpResources {
@@ -30,6 +31,7 @@ impl Default for TmpResources {
         Self {
             use_mouse: false,
             mouse_pressed: false,
+            fullscreen: false,
         }
     }
 }

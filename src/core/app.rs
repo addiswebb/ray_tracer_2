@@ -16,7 +16,7 @@ use winit::{
     dpi::PhysicalSize,
     event::{DeviceEvent, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
-    window::Window,
+    window::{Fullscreen, Window},
 };
 
 use crate::core::{
@@ -225,6 +225,22 @@ impl App {
                             "C:/users/addis/downloads/test.png".to_string(),
                         )
                         .unwrap();
+                    }
+                    true
+                }
+                KeyCode::KeyF => {
+                    if key_state.is_pressed() {
+                        let window = self.window.as_mut().unwrap();
+                        engine.tmp.fullscreen = match engine.tmp.fullscreen {
+                            true => {
+                                window.set_fullscreen(None);
+                                false
+                            }
+                            false => {
+                                window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                                true
+                            }
+                        };
                     }
                     true
                 }

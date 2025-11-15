@@ -16,6 +16,8 @@ use crate::core::{
 
 use super::camera::Camera;
 
+pub const SELECTABLE_SCENES: u32 = 5;
+
 pub struct SceneDefinition {
     camera: Camera,
     entities: Vec<EntityDefinition>,
@@ -77,6 +79,7 @@ impl SceneManager {
         assets: &mut AssetManager,
         ray_tracer: &mut RayTracer,
     ) {
+        println!("Loading Scene");
         self.scene = Scene::instantiate_scene(scene_definition, assets);
         ray_tracer.load_scene_gpu_resources(assets);
     }
@@ -127,7 +130,6 @@ impl Scene {
         scene_definition: &SceneDefinition,
         asset_manager: &mut AssetManager,
     ) -> Scene {
-        println!("Instantiating Scene");
         let mut spheres: Vec<Sphere> = vec![];
         let mut meshes: Vec<MeshInstance> = vec![];
         for (i, e) in scene_definition.entities.iter().enumerate() {
@@ -157,7 +159,7 @@ impl Scene {
                 texture_index: texture_ref.index,
                 width: texture_ref.width,
                 height: texture_ref.height,
-                _p1: [0.0; 3],
+                ..Default::default()
             };
             match &e.primitive {
                 Primitive::Sphere { centre, radius } => {
@@ -805,7 +807,7 @@ impl Scene {
         let mut scene_def = SceneDefinition::default();
 
         scene_def.set_camera(&CameraDescriptor {
-            transform: Transform::cam(Vec3::Y * 4.0, Vec3::X),
+            transform: Transform::cam(Vec3::new(0.0, 4.0, 0.0), Vec3::new(0.0, 4.0, 1.0)),
             ..Default::default()
         });
 

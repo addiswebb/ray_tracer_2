@@ -177,7 +177,7 @@ impl BVH {
                 triangles: (mesh_instance.mesh.indices.len() / 3) as u32,
                 triangle_offset: triangle_offset as u32,
                 material: mesh_instance.material,
-                _p1: 0.0,
+                ..Default::default()
             });
         }
         stats.print();
@@ -222,13 +222,12 @@ impl BVH {
         }
         nodes.push(Node {
             aabb_min: min,
-            _p1: 0.0,
             aabb_max: max,
-            _p2: 0.0,
             left: 0,
             right: 0,
             first: 0,
             count: n_tris as u32,
+            ..Default::default()
         });
 
         let mut bvh = Self {
@@ -398,26 +397,24 @@ impl BVH {
                 // Left child
                 self.nodes.push(Node {
                     aabb_min: left_min,
-                    _p1: 0.0,
                     aabb_max: left_max,
-                    _p2: 0.0,
                     left: 0,
                     right: 0,
                     first: left_first,
                     count: left_count as u32,
+                    ..Default::default()
                 })
             }
             {
                 // Right child
                 self.nodes.push(Node {
                     aabb_min: right_min,
-                    _p1: 0.0,
                     aabb_max: right_max,
-                    _p2: 0.0,
                     left: 0,
                     right: 0,
                     first: right_first,
                     count: right_count,
+                    ..Default::default()
                 })
             }
             {
