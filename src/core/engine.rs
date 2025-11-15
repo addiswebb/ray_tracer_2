@@ -24,6 +24,7 @@ pub struct TmpResources {
     pub use_mouse: bool,
     pub mouse_pressed: bool,
     pub fullscreen: bool,
+    pub low_res: bool,
 }
 
 impl Default for TmpResources {
@@ -32,6 +33,7 @@ impl Default for TmpResources {
             use_mouse: false,
             mouse_pressed: false,
             fullscreen: false,
+            low_res: false,
         }
     }
 }
@@ -188,6 +190,14 @@ impl FrameTiming {
             dt: Duration::ZERO,
             average_frame_time: Duration::ZERO,
         }
+    }
+    pub fn update(&mut self, dt: Duration) {
+        self.dt = dt;
+        self.average_frame_time += dt;
+        self.average_frame_time /= 2;
+    }
+    pub fn reset(&mut self) {
+        self.average_frame_time = Duration::ZERO;
     }
 }
 pub const RENDER_SIZE: (u32, u32) = (1920, 1080);

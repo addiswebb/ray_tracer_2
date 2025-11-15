@@ -7,7 +7,7 @@ use std::{
 };
 
 use egui_wgpu::wgpu::{
-    self, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, Limits, Origin3d,
+    self, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, Origin3d,
     TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureAspect,
 };
 use image::ImageBuffer;
@@ -21,7 +21,8 @@ use winit::{
 
 use crate::core::{
     egui::UiContext,
-    engine::{Engine, RENDER_SIZE},
+    engine::{Engine, FrameTiming, RENDER_SIZE},
+    ray_tracer::DebugMode,
     scene::Scene,
 };
 
@@ -39,6 +40,33 @@ pub struct Params {
     pub debug_scale: i32,
     pub _p1: [f32; 3],
 }
+
+impl Params {
+    pub fn update(&mut self, is_moving: bool) -> bool {
+        if is_moving {
+            self.reset_frame();
+            return true;
+        }
+        if self.accumulate == 1 {
+            self.frames += 1;
+            return false;
+        }
+        self.reset_frame();
+        true
+    }
+    pub fn reset_frame(&mut self) {
+        self.frames = -1;
+    }
+    pub fn for_buffer(&self, is_moving: bool) -> Self {
+        let mut params = self.clone();
+        params.number_of_bounces = if is_moving { 1 } else { self.number_of_bounces };
+        params.rays_per_pixel = if is_moving { 1 } else { self.rays_per_pixel };
+        params.width = if is_moving { 1280 } else { self.width };
+        params.height = if is_moving { 1080 } else { self.height };
+        params
+    }
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {
@@ -55,7 +83,7 @@ impl Default for Params {
         }
     }
 }
-pub const DEBUG_MODES: u32 = 8;
+pub const DEBUG_MODES: u32 = DebugMode::NodesAndTriangles as u32 + 1;
 
 pub struct App {
     engine: Option<Engine>,
@@ -94,22 +122,14 @@ impl App {
     pub fn update(&mut self, dt: Duration) {
         let engine = self.engine.as_mut().unwrap();
         let timing = &mut engine.timing;
-        timing.dt = dt;
-        timing.average_frame_time += dt;
-        timing.average_frame_time /= 2;
+        timing.update(dt);
 
-        engine.scene_manager.scene.camera.update_camera(dt);
-        if engine.scene_manager.scene.camera.controller.is_moving() {
-            engine.params.frames = -1;
-            timing.average_frame_time = Duration::ZERO;
+        let camera_moved = engine.scene_manager.scene.camera.update_camera(dt);
+        let reset_frame = engine.params.update(camera_moved);
+        if camera_moved || reset_frame {
+            timing.reset();
         }
-        if engine.params.accumulate != 0 {
-            engine.params.frames += 1;
-        } else {
-            // Reset Accumulation
-            engine.params.frames = -1;
-            timing.average_frame_time = Duration::ZERO;
-        }
+
         if engine.scene_manager.selected_scene != engine.scene_manager.prev_scene {
             log::info!("Changing Scene: {}", engine.scene_manager.selected_scene);
             // Todo: Make this work with new thing
@@ -163,12 +183,14 @@ impl App {
         engine.resources.queue.write_buffer(
             &engine.resources.params_buffer,
             0,
-            bytemuck::cast_slice(&[engine.params]),
+            bytemuck::cast_slice(&[engine.params.for_buffer(camera_moved || engine.tmp.low_res)]),
         );
         // Todo: investigate performance effects of this
-        engine
-            .ray_tracer
-            .update_buffers(&engine.resources.queue, &mut engine.scene_manager.scene);
+        if engine.tmp.update_buffers {
+            engine
+                .ray_tracer
+                .update_buffers(&engine.resources.queue, &mut engine.scene_manager.scene);
+        }
     }
 
     fn handle_input(&mut self, event: &WindowEvent) -> bool {
@@ -198,20 +220,22 @@ impl App {
                 KeyCode::KeyQ => {
                     if key_state.is_pressed() {
                         engine.scene_manager.selected_scene += 1;
-                        if engine.scene_manager.selected_scene > 3 {
+                        if engine.scene_manager.selected_scene > 5 {
                             engine.scene_manager.selected_scene = 0;
                         }
+                        engine.params.reset_frame();
+                        engine.timing.reset();
                     }
                     true
                 }
                 KeyCode::KeyE => {
                     if key_state.is_pressed() {
                         engine.params.debug_flag += 1;
-                        if engine.scene_manager.selected_scene > DEBUG_MODES as i32 {
-                            engine.scene_manager.selected_scene = 0;
+                        if engine.params.debug_flag > DEBUG_MODES as i32 {
+                            engine.params.debug_flag = 0;
                         }
-                        engine.params.frames = -1;
-                        engine.timing.average_frame_time = Duration::ZERO;
+                        engine.params.reset_frame();
+                        engine.timing.reset();
                     }
                     true
                 }
@@ -241,6 +265,29 @@ impl App {
                                 true
                             }
                         };
+                    }
+                    true
+                }
+                KeyCode::KeyR => {
+                    if key_state.is_pressed() {
+                        engine.tmp.low_res = !engine.tmp.low_res;
+                        engine.params.reset_frame();
+                        engine.timing.reset();
+                    }
+                    true
+                }
+                KeyCode::Digit1 => {
+                    if key_state.is_pressed() {
+                        engine.params.skybox = if engine.params.skybox != 0 { 0 } else { 1 };
+                        engine.params.reset_frame();
+                        engine.timing.reset();
+                    }
+                    true
+                }
+                KeyCode::Digit2 => {
+                    if key_state.is_pressed() {
+                        engine.params.accumulate =
+                            if engine.params.accumulate != 0 { 0 } else { 1 };
                     }
                     true
                 }
@@ -467,8 +514,6 @@ impl ApplicationHandler for App {
                         .camera
                         .controller
                         .process_mouse(delta.0, delta.1);
-                    engine.params.frames = -1;
-                    engine.timing.average_frame_time = Duration::ZERO;
                 }
             }
             DeviceEvent::MouseWheel { delta } => {
@@ -479,8 +524,6 @@ impl ApplicationHandler for App {
                         .camera
                         .controller
                         .process_scroll(&delta);
-                    engine.params.frames = -1;
-                    engine.timing.average_frame_time = Duration::ZERO;
                 }
             }
             _ => {}

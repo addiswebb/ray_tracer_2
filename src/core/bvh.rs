@@ -285,7 +285,7 @@ impl BVH {
                     if bounds[1] > bounds[2] { 1 } else { 2 }
                 };
                 *split_pos = node.aabb_min[*axis] + bounds[*axis] * 0.5;
-                self.evaluate_sah(node, axis.clone() as i32, split_pos.clone(), start, count)
+                self.evaluate_sah(axis.clone() as i32, split_pos.clone(), start, count)
             }
             Quality::High => {
                 let mut best_cost = f32::INFINITY;
@@ -303,7 +303,7 @@ impl BVH {
                     for i in 0..n_split_tests {
                         let split_t = (i + 1) as f32 / (n_split_tests as f32 + 1.0);
                         let test_split_pos = axis_min + axis_size * split_t;
-                        let cost = self.evaluate_sah(node, a as i32, test_split_pos, start, count);
+                        let cost = self.evaluate_sah(a as i32, test_split_pos, start, count);
                         if cost < best_cost {
                             *split_pos = test_split_pos;
                             *axis = a;
@@ -316,14 +316,7 @@ impl BVH {
             Quality::Disabled => f32::INFINITY,
         };
     }
-    pub fn evaluate_sah(
-        &self,
-        node: &Node,
-        axis: i32,
-        pos: f32,
-        start: usize,
-        count: usize,
-    ) -> f32 {
+    pub fn evaluate_sah(&self, axis: i32, pos: f32, start: usize, count: usize) -> f32 {
         let mut left_bounds = Aabb::default();
         let mut right_bounds = Aabb::default();
         let mut left_count = 0.0;

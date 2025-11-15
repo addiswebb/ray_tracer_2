@@ -114,7 +114,8 @@ impl EguiRenderer {
                         ui.checkbox(&mut accumulate, "Accumulate");
                         params.accumulate = accumulate as i32;
                         if ui.button("Clear").clicked() {
-                            params.frames = -1;
+                            params.reset_frame();
+                            ctx.timing.reset();
                         }
                     });
 
@@ -416,8 +417,8 @@ impl EguiRenderer {
 
                     if ui.button("Rebuild BVH").clicked() {
                         ctx.scene_manager.scene.built_bvh = false;
-                        params.frames = -1;
-                        ctx.timing.average_frame_time = Duration::ZERO;
+                        params.reset_frame();
+                        ctx.timing.reset();
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -490,13 +491,13 @@ impl EguiRenderer {
 
         if *ctx.params != params {
             *ctx.params = params;
-            ctx.params.frames = -1;
-            ctx.timing.average_frame_time = Duration::ZERO;
+            ctx.params.reset_frame();
+            ctx.timing.reset();
         }
         if camera != ctx.scene_manager.scene.camera {
             ctx.scene_manager.scene.camera = camera;
-            ctx.params.frames = -1;
-            ctx.timing.average_frame_time = Duration::ZERO;
+            ctx.params.reset_frame();
+            ctx.timing.reset();
         }
     }
 

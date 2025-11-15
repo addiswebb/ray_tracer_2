@@ -134,6 +134,14 @@ const INF: f32 = 0x1p+127f;  // Hexadecimal float literal
 const MATERIAL_GLASS: i32 = 1;
 const MATERIAL_TEXTURE: i32 = 2;
 
+const DEBUG_NORMALS: i32 = 1;
+const DEBUG_DEPTH: i32 = 2;
+const DEBUG_TEX_COORDS: i32 = 3;
+const DEBUG_FOCUS_DST: i32 = 4;
+const DEBUG_NODES: i32 = 5;
+const DEBUG_TRIANGLES: i32 = 6;
+const DEBUG_NODES_TRIANGLES: i32 = 7;
+
 @compute
 @workgroup_size(8,8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -498,40 +506,38 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
     ray.inv_dir = 1.0 / ray.dir;
     let hit: Hit = calculate_ray_collions(ray, &stats);
     switch params.debug_flag{
-        case 1: {
+        case DEBUG_NODES: {
             let d = f32(stats[0]) / f32(params.debug_scale);
             if d > 1.0 {
                 return vec4<f32>(1.0, 0.0, 0.0, 1.0);
             }
             return vec4<f32>(d, d, d, 1.0);
         }
-        case 2:{
+        case DEBUG_TRIANGLES:{
+            // Triangles
             let t = f32(stats[1]) / f32(params.debug_scale);
             if t > 1.0 {
                 return vec4<f32>(1.0, 0.0, 0.0, 1.0);
             }
             return vec4<f32>(t, t, t, 1.0);
         }
-        case 3:{
-            let d = distance(ray.origin, hit.hit_point) / f32(params.debug_scale);
-            return vec4<f32>(d, d, d, 1.0);
-        }
-        case 4:{
-            if !hit.hit {return vec4<f32>(0.0);}
-            let n = hit.normal * 0.5 + 0.5;
-            return vec4<f32>(n.x, n.y, n.z, 1.0);
-        }
-        case 5:{
-            let d = f32(stats[0]) / f32(params.debug_scale);
-            let t = f32(stats[1]) / f32(params.debug_scale);
-            return vec4<f32>(t, 0.0, d, 1.0);
-        }
-        case 6: {
+        case DEBUG_DEPTH:{
+            // Depth
             if !hit.hit {return vec4<f32>(0.0); }
             let d = hit.dst / f32(params.debug_scale);
             return vec4<f32>(d, d, d, 1.0);
         }
-        case 7: {
+        case DEBUG_NORMALS:{
+            if !hit.hit {return vec4<f32>(0.0);}
+            let n = hit.normal * 0.5 + 0.5;
+            return vec4<f32>(n.x, n.y, n.z, 1.0);
+        }
+        case DEBUG_NODES_TRIANGLES:{
+            let d = f32(stats[0]) / f32(params.debug_scale);
+            let t = f32(stats[1]) / f32(params.debug_scale);
+            return vec4<f32>(t, 0.0, d, 1.0);
+        }
+        case DEBUG_FOCUS_DST: {
             if !hit.hit {return vec4<f32>(0.0); }
             let s = f32(params.debug_scale) / 10.0;
             let d = hit.dst / f32(params.debug_scale);
@@ -541,7 +547,7 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
                 return vec4(d, d, d, 1.0);
             }
         }
-        case 8: {
+        case DEBUG_TEX_COORDS: {
             if !hit.hit {return vec4<f32>(0.0); }
             return vec4(hit.uv, 0.0, 1.0);
         }

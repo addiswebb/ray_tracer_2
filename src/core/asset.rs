@@ -1,6 +1,5 @@
 use std::{collections::HashMap, fs::File, io::Read, sync::Arc};
 
-use egui_wgpu::wgpu::{self};
 use glam::Vec3;
 use image::{ImageBuffer, Rgba};
 

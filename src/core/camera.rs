@@ -89,8 +89,9 @@ impl Camera {
             diverge_strength: self.diverge_strength,
         }
     }
-    pub fn update_camera(&mut self, dt: Duration) {
+    pub fn update_camera(&mut self, dt: Duration) -> bool {
         let dt = dt.as_secs_f32();
+        let mut moved = false;
         let scalar = self.controller.sensitivity * dt;
 
         // Handle rotation - FPS style (no roll)
@@ -110,6 +111,7 @@ impl Camera {
             // Reset rotation inputs
             self.controller.rotate_horizontal = 0.0;
             self.controller.rotate_vertical = 0.0;
+            moved = true;
         }
 
         let mut local_move = Vec3::ZERO;
@@ -121,6 +123,7 @@ impl Camera {
             let world_move =
                 self.transform.rot * (local_move.normalize() * self.controller.speed * dt);
             self.transform.pos += world_move;
+            moved = true;
         }
 
         if self.controller.scroll != 0.0 {
@@ -128,7 +131,9 @@ impl Camera {
                 self.transform.rot * Vec3::Z * self.controller.scroll * self.controller.speed * dt;
             self.transform.pos += zoom_delta;
             self.controller.scroll = 0.0;
+            moved = true;
         }
+        moved
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -169,13 +169,13 @@ impl Scene {
                     match mesh_def {
                         MeshDefinition::FromFile {
                             path,
-                            use_mtl: use_loaded_materials,
+                            use_mtl,
                         } => {
                             // Load mesh using asset manager
                             let mut m = asset_manager.load_model_with_material(
                                 path,
                                 e.transform,
-                                *use_loaded_materials,
+                                *use_mtl,
                                 material,
                             );
                             meshes.append(&mut m);

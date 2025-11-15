@@ -1,10 +1,5 @@
 use std::{mem, num::NonZeroU32, sync::Arc};
 
-use egui_wgpu::wgpu::{
-    self, Extent3d, PipelineCompilationOptions, TextureView, wgt::TextureViewDescriptor,
-};
-use image::{ImageBuffer, Rgba};
-
 use crate::core::{
     app::Params,
     asset::AssetManager,
@@ -12,12 +7,25 @@ use crate::core::{
     mesh::{MeshUniform, Sphere},
     scene::{Scene, SceneUniform},
 };
+use egui_wgpu::wgpu::{
+    self, Extent3d, PipelineCompilationOptions, TextureView, wgt::TextureViewDescriptor,
+};
 
 const WORKGROUP_SIZE: (u32, u32) = (8, 8);
 const MAX_MESHES: u64 = 400;
 const MAX_SPHERS: u64 = 500;
 const MAX_TRIANGLES: u64 = 275000;
 pub const MAX_TEXTURES: u64 = 32;
+
+pub enum DebugMode {
+    Normals = 1,
+    Depth,
+    TexCoords,
+    FocusDst,
+    Nodes,
+    Triangles,
+    NodesAndTriangles,
+}
 
 pub struct RayTracer {
     pub device: Arc<wgpu::Device>,
