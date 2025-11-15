@@ -25,7 +25,7 @@ pub struct TextureRef {
 pub enum MeshDefinition {
     FromFile {
         path: String,
-        use_loaded_materials: bool,
+        use_mtl: bool,
     },
     FromData {
         vertices: Arc<Vec<Vertex>>,

@@ -167,7 +167,7 @@ impl Scene {
                     match mesh_def {
                         MeshDefinition::FromFile {
                             path,
-                            use_loaded_materials,
+                            use_mtl: use_loaded_materials,
                         } => {
                             // Load mesh using asset manager
                             let mut m = asset_manager.load_model_with_material(
@@ -257,7 +257,7 @@ impl Scene {
             Transform::default(),
             MeshDefinition::FromFile {
                 path: "dragon.obj".to_string(),
-                use_loaded_materials: false,
+                use_mtl: false,
             },
             MaterialDefinition::new(),
         );
@@ -534,7 +534,7 @@ impl Scene {
             },
             MeshDefinition::FromFile {
                 path: "Dragon_80K.obj".to_string(),
-                use_loaded_materials: false,
+                use_mtl: false,
             },
             MaterialDefinition::new()
                 .color([0.96078, 0.11372, 0.4039, 1.0])
@@ -549,7 +549,7 @@ impl Scene {
             },
             MeshDefinition::FromFile {
                 path: "Dragon_80K.obj".to_string(),
-                use_loaded_materials: false,
+                use_mtl: false,
             },
             MaterialDefinition::new()
                 .color([0.96078, 0.11372, 0.4039, 1.0])
@@ -817,7 +817,7 @@ impl Scene {
             },
             MeshDefinition::FromFile {
                 path: "sponza.obj".to_string(),
-                use_loaded_materials: true,
+                use_mtl: true,
             },
             MaterialDefinition::texture_from_obj(),
         );
