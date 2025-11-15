@@ -6,15 +6,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use egui_wgpu::{
-    ScreenDescriptor,
-    wgpu::{
-        self, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, Limits, Origin3d,
-        SurfaceError, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo,
-        TextureAspect, TextureView, util::DeviceExt,
-    },
+use egui_wgpu::wgpu::{
+    self, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, Limits, Origin3d,
+    TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureAspect,
 };
-use glam::Quat;
 use image::ImageBuffer;
 use winit::{
     application::ApplicationHandler,
@@ -51,7 +46,7 @@ impl Default for Params {
             height: 1080,
             number_of_bounces: 5,
             rays_per_pixel: 1,
-            skybox: 1,
+            skybox: 0,
             frames: 0,
             accumulate: 1,
             debug_flag: 0,

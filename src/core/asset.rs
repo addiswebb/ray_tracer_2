@@ -25,6 +25,7 @@ pub struct TextureRef {
 pub enum MeshDefinition {
     FromFile {
         path: String,
+        use_loaded_materials: bool,
     },
     FromData {
         vertices: Arc<Vec<Vertex>>,
@@ -45,6 +46,7 @@ pub enum TextureDefinition {
     FromFile {
         path: String,
     },
+    #[allow(unused)]
     FromData {
         width: u32,
         height: u32,
@@ -194,8 +196,28 @@ impl AssetManager {
         self.cpu_textures.push(image);
         texture_ref
     }
+    pub fn load_model_with_material(
+        &mut self,
+        path: &String,
+        transform: Transform,
+        load_materials: bool,
+        material: Material,
+    ) -> Vec<MeshInstance> {
+        let mut meshes = self.load_model(path, transform, load_materials);
+        if !load_materials {
+            for mesh in &mut meshes {
+                mesh.material = material;
+            }
+        }
+        meshes
+    }
 
-    pub fn load_model(&mut self, path: &String, transform: Transform) -> Vec<MeshInstance> {
+    pub fn load_model(
+        &mut self,
+        path: &String,
+        transform: Transform,
+        load_materials: bool,
+    ) -> Vec<MeshInstance> {
         println!("Loading model: {}", path);
         let mut meshes: Vec<MeshInstance> = vec![];
         let mut material_defs: Vec<Material> = vec![];
@@ -210,7 +232,7 @@ impl AssetManager {
             },
         )
         .expect("Failed to load OBJ File");
-        if let Ok(materials) = materials {
+        if load_materials && let Ok(materials) = materials {
             for m in materials {
                 let color = m.diffuse.unwrap_or([0.7; 3]);
                 let spec = m.specular.unwrap_or([1.0; 3]);
@@ -249,60 +271,71 @@ impl AssetManager {
         }
 
         for (i, m) in models.into_iter().enumerate() {
+            let mut mesh = Mesh {
+                vertices: Arc::new(vec![]),
+                indices: Arc::new(vec![]),
+            };
             let mut vertices = vec![];
-            for (j, &vi) in m.mesh.indices.iter().enumerate() {
-                let pi = vi as usize;
-                let pos = Vec3::new(
-                    m.mesh.positions[3 * pi],
-                    m.mesh.positions[3 * pi + 1],
-                    m.mesh.positions[3 * pi + 2],
-                );
 
-                let normal = if !m.mesh.normals.is_empty() && !m.mesh.normal_indices.is_empty() {
-                    let ni = m.mesh.normal_indices[j] as usize;
-                    Vec3::new(
-                        m.mesh.normals[3 * ni],
-                        m.mesh.normals[3 * ni + 1],
-                        m.mesh.normals[3 * ni + 2],
-                    )
-                } else if !m.mesh.normals.is_empty() {
-                    // fallback: just use the position index (may be wrong for some OBJ files)
-                    let ni = pi;
-                    Vec3::new(
-                        m.mesh.normals[3 * ni],
-                        m.mesh.normals[3 * ni + 1],
-                        m.mesh.normals[3 * ni + 2],
-                    )
-                } else {
-                    Vec3::ZERO
-                };
+            if let Some(mesh_ref) = self.loaded_meshes.get(&format!("{}_{}", m.name, i)) {
+                println!("Used cached vertices");
+                mesh.vertices = mesh_ref.vertices.clone();
+                mesh.indices = mesh_ref.indices.clone();
+            } else {
+                println!("Read new vertices");
+                for (j, &vi) in m.mesh.indices.iter().enumerate() {
+                    let pi = vi as usize;
+                    let pos = Vec3::new(
+                        m.mesh.positions[3 * pi],
+                        m.mesh.positions[3 * pi + 1],
+                        m.mesh.positions[3 * pi + 2],
+                    );
 
-                let uv = if !m.mesh.texcoords.is_empty() && !m.mesh.texcoord_indices.is_empty() {
-                    let ti = m.mesh.texcoord_indices[j] as usize; // j from enumerate()
-                    [m.mesh.texcoords[2 * ti], m.mesh.texcoords[2 * ti + 1]]
-                } else {
-                    [0.0, 0.0] // fallback for missing UVs
-                };
+                    let normal = if !m.mesh.normals.is_empty() && !m.mesh.normal_indices.is_empty()
+                    {
+                        let ni = m.mesh.normal_indices[j] as usize;
+                        Vec3::new(
+                            m.mesh.normals[3 * ni],
+                            m.mesh.normals[3 * ni + 1],
+                            m.mesh.normals[3 * ni + 2],
+                        )
+                    } else if !m.mesh.normals.is_empty() {
+                        // fallback: just use the position index (may be wrong for some OBJ files)
+                        let ni = pi;
+                        Vec3::new(
+                            m.mesh.normals[3 * ni],
+                            m.mesh.normals[3 * ni + 1],
+                            m.mesh.normals[3 * ni + 2],
+                        )
+                    } else {
+                        Vec3::ZERO
+                    };
 
-                vertices.push(Vertex::with_uv(pos, normal, uv));
+                    let uv = if !m.mesh.texcoords.is_empty() && !m.mesh.texcoord_indices.is_empty()
+                    {
+                        let ti = m.mesh.texcoord_indices[j] as usize; // j from enumerate()
+                        [m.mesh.texcoords[2 * ti], m.mesh.texcoords[2 * ti + 1]]
+                    } else {
+                        [0.0, 0.0] // fallback for missing UVs
+                    };
+
+                    vertices.push(Vertex::with_uv(pos, normal, uv));
+                }
+                mesh.indices = Arc::new((0..vertices.len() as u32).collect());
+                mesh.vertices = Arc::new(vertices);
             }
-
-            let indices = (0..vertices.len() as u32).collect();
-            // Make this return a whole Arc<Mesh> later, with fully loaded material.
-            // Add path and Arc<Mesh> to meshes HashMap
-            // Add any loaded textures to HashMap also
-            let material = if let Some(id) = m.mesh.material_id {
+            let material = if load_materials && let Some(id) = m.mesh.material_id {
                 material_defs[id]
             } else {
                 Material::new()
             };
+            let mesh = Arc::new(mesh);
+            self.loaded_meshes
+                .insert(format!("{}_{}", m.name, i), mesh.clone());
             meshes.push(MeshInstance {
                 label: Some(m.name),
                 transform,
-                mesh: Arc::new(Mesh {
-                    vertices: Arc::new(vertices),
-                    indices: Arc::new(indices),
-                }),
+                mesh: mesh.clone(),
                 material,
             });
         }

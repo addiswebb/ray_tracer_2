@@ -25,7 +25,6 @@ pub struct UiContext<'a> {
 }
 
 pub struct EguiRenderer {
-    device: Arc<wgpu::Device>,
     state: State,
     pub renderer: Renderer,
     frame_started: bool,
@@ -61,7 +60,6 @@ impl EguiRenderer {
             true,
         );
         EguiRenderer {
-            device,
             state,
             renderer,
             frame_started: false,

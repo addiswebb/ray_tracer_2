@@ -6,7 +6,6 @@ use wgpu::PipelineCompilationOptions;
 use crate::core::app::Params;
 
 pub struct Renderer {
-    device: Arc<wgpu::Device>,
 }
 
 impl Renderer {
@@ -114,7 +113,7 @@ impl Renderer {
             bind_group,
         });
 
-        Some(Self { device })
+        Some(Self {})
     }
     pub fn render_ray_traced_image(&mut self, ui: &mut egui::Ui) -> bool {
         let (rect, response) = ui.allocate_exact_size(

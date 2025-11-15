@@ -89,7 +89,6 @@ pub struct Scene {
     pub bvh_data: MeshDataList,
     pub bvh_quality: Quality,
     pub built_bvh: bool,
-    pub texture_map: Vec<String>,
 }
 
 #[repr(C)]
@@ -122,7 +121,6 @@ impl Scene {
             bvh_data: MeshDataList::default(),
             bvh_quality: Quality::default(),
             built_bvh: false,
-            texture_map: vec![],
         }
     }
     pub fn instantiate_scene(
@@ -167,9 +165,17 @@ impl Scene {
                 }
                 Primitive::Mesh(mesh_def) => {
                     match mesh_def {
-                        MeshDefinition::FromFile { path } => {
+                        MeshDefinition::FromFile {
+                            path,
+                            use_loaded_materials,
+                        } => {
                             // Load mesh using asset manager
-                            let mut m = asset_manager.load_model(path, e.transform);
+                            let mut m = asset_manager.load_model_with_material(
+                                path,
+                                e.transform,
+                                *use_loaded_materials,
+                                material,
+                            );
                             meshes.append(&mut m);
                         }
                         MeshDefinition::FromData { vertices, indices } => {
@@ -197,7 +203,6 @@ impl Scene {
             bvh_data,
             bvh_quality: bvh::Quality::High,
             built_bvh: true,
-            texture_map: vec![],
         }
     }
     pub fn bvh(&mut self) -> &Vec<Node> {
@@ -252,6 +257,7 @@ impl Scene {
             Transform::default(),
             MeshDefinition::FromFile {
                 path: "dragon.obj".to_string(),
+                use_loaded_materials: false,
             },
             MaterialDefinition::new(),
         );
@@ -528,6 +534,22 @@ impl Scene {
             },
             MeshDefinition::FromFile {
                 path: "Dragon_80K.obj".to_string(),
+                use_loaded_materials: false,
+            },
+            MaterialDefinition::new()
+                .color([0.96078, 0.11372, 0.4039, 1.0])
+                .smooth(0.8)
+                .specular([1.0; 4], 0.015),
+        );
+        scene.add_mesh(
+            Transform {
+                pos: Vec3::new(0.0, 7.2, 2.0),
+                rot: Quat::from_euler(glam::EulerRot::XYX, 0.0, -1.5708, 0.0),
+                scale: Vec3::splat(1.0),
+            },
+            MeshDefinition::FromFile {
+                path: "Dragon_80K.obj".to_string(),
+                use_loaded_materials: false,
             },
             MaterialDefinition::new()
                 .color([0.96078, 0.11372, 0.4039, 1.0])
@@ -795,6 +817,7 @@ impl Scene {
             },
             MeshDefinition::FromFile {
                 path: "sponza.obj".to_string(),
+                use_loaded_materials: true,
             },
             MaterialDefinition::texture_from_obj(),
         );

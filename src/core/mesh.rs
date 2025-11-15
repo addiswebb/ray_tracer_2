@@ -123,12 +123,6 @@ impl Default for Transform {
     }
 }
 
-impl MeshInstance {
-    pub fn material(&mut self, material: Material) -> &Self {
-        self.material = material;
-        self
-    }
-}
 impl Mesh {
     pub fn quad() -> Vec<Vertex> {
         vec![

@@ -35,7 +35,6 @@ impl Default for TmpResources {
 }
 
 pub struct GraphicsResources {
-    pub instance: wgpu::Instance,
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
     pub surface_config: wgpu::SurfaceConfiguration,
@@ -159,7 +158,6 @@ impl GraphicsResources {
         let queue = Arc::new(queue);
 
         Self {
-            instance,
             device,
             queue,
             surface_config,
