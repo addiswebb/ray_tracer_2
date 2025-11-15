@@ -47,6 +47,23 @@ pub struct Params {
     debug_scale: i32,
     _p1: [f32; 3],
 }
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            width: 1920,
+            height: 1080,
+            number_of_bounces: 5,
+            rays_per_pixel: 1,
+            skybox: 1,
+            frames: 0,
+            accumulate: 1,
+            debug_flag: 0,
+            debug_scale: 0,
+            _p1: [0.0; 3],
+        }
+    }
+}
+
 #[allow(unused)]
 pub struct AppState {
     pub device: Arc<wgpu::Device>,
@@ -69,9 +86,11 @@ pub struct AppState {
     pub dt: Duration,
     pub average_frame_time: Duration,
     pub selected_entity: i32,
+    pub asset_manager: AssetManager,
 }
 
 const DEBUG_MODES: u32 = 8;
+const RENDER_SIZE: (u32, u32) = (1920, 1080);
 
 impl AppState {
     async fn new(
@@ -128,10 +147,10 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         let params = Params {
-            width: 1920,
-            height: 1080,
-            number_of_bounces: 5,
-            rays_per_pixel: 1,
+            width: RENDER_SIZE.0,
+            height: RENDER_SIZE.1,
+            number_of_bounces: 4,
+            rays_per_pixel: 2,
             skybox: 1,
             frames: 0,
             accumulate: 1,
@@ -166,12 +185,14 @@ impl AppState {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
-        let mut ray_tracer = RayTracer::new(device.clone(), &texture_view, &params_buffer);
+        let mut ray_tracer = RayTracer::new(device.clone(), queue.clone());
+
+        let mut asset_manager = AssetManager::new();
+        let scene = Scene::instantiate_scene(&Scene::sponza(), &mut asset_manager);
+
+        ray_tracer.create_gpu_resources(&texture_view, &params_buffer, &asset_manager.cpu_textures);
         let mut egui_renderer =
             EguiRenderer::new(device.clone(), surface_config.format, None, 1, window);
-
-        let mut asset_manager = AssetManager::new(device.clone(), queue.clone());
-        let scene = Scene::instantiate_scene(&Scene::room_2().await, &mut asset_manager).await;
 
         let renderer = Renderer::new(
             device.clone(),
@@ -203,6 +224,7 @@ impl AppState {
             dt: Duration::ZERO,
             average_frame_time: Duration::ZERO,
             selected_entity: -1,
+            asset_manager,
         }
     }
 
@@ -285,21 +307,63 @@ impl App {
         if state.selected_scene != state.prev_scene {
             log::info!("Changing Scene: {}", state.selected_scene);
             // Todo: Make this work with new thing
-            // match state.selected_scene {
-            //     0 => {
-            //         state.scene = Scene::balls();
-            //     }
-            //     1 => {
-            //         state.scene = Scene::room();
-            //     }
-            //     2 => {
-            //         state.scene = Scene::metal();
-            //     }
-            //     3 => {
-            //         state.scene = Scene::random_balls();
-            //     }
-            //     _ => (),
-            // }
+            match state.selected_scene {
+                0 => {
+                    state.scene =
+                        Scene::instantiate_scene(&Scene::balls(), &mut state.asset_manager);
+                    state.ray_tracer.create_gpu_resources(
+                        &state.texture_view,
+                        &state.params_buffer,
+                        &state.asset_manager.cpu_textures,
+                    );
+                }
+                1 => {
+                    state.scene =
+                        Scene::instantiate_scene(&Scene::room(), &mut state.asset_manager);
+                    state.ray_tracer.create_gpu_resources(
+                        &state.texture_view,
+                        &state.params_buffer,
+                        &state.asset_manager.cpu_textures,
+                    );
+                }
+                2 => {
+                    state.scene =
+                        Scene::instantiate_scene(&Scene::metal(), &mut state.asset_manager);
+                    state.ray_tracer.create_gpu_resources(
+                        &state.texture_view,
+                        &state.params_buffer,
+                        &state.asset_manager.cpu_textures,
+                    );
+                }
+                3 => {
+                    state.scene =
+                        Scene::instantiate_scene(&Scene::random_balls(), &mut state.asset_manager);
+                    state.ray_tracer.create_gpu_resources(
+                        &state.texture_view,
+                        &state.params_buffer,
+                        &state.asset_manager.cpu_textures,
+                    );
+                }
+                4 => {
+                    state.scene =
+                        Scene::instantiate_scene(&Scene::room_2(), &mut state.asset_manager);
+                    state.ray_tracer.create_gpu_resources(
+                        &state.texture_view,
+                        &state.params_buffer,
+                        &state.asset_manager.cpu_textures,
+                    );
+                }
+                5 => {
+                    state.scene =
+                        Scene::instantiate_scene(&Scene::sponza(), &mut state.asset_manager);
+                    state.ray_tracer.create_gpu_resources(
+                        &state.texture_view,
+                        &state.params_buffer,
+                        &state.asset_manager.cpu_textures,
+                    );
+                }
+                _ => (),
+            }
             state.prev_scene = state.selected_scene;
         }
         state.queue.write_buffer(
@@ -509,7 +573,7 @@ impl App {
                     ui.checkbox(&mut skybox, "Skybox");
                     ui.horizontal(|ui| {
                         ui.label("Scene ID");
-                        ui.add(egui::DragValue::new(&mut state.selected_scene).range(0..=3));
+                        ui.add(egui::DragValue::new(&mut state.selected_scene).range(0..=5));
                     });
                     if state.selected_entity != -1 {
                         ui.separator();
@@ -772,12 +836,12 @@ impl App {
                         ui.add(
                             egui::DragValue::new(&mut params.width)
                                 .update_while_editing(false)
-                                .range(1..=1920),
+                                .range(1..=RENDER_SIZE.0),
                         );
                         ui.add(
                             egui::DragValue::new(&mut params.height)
                                 .update_while_editing(false)
-                                .range(1..=1080),
+                                .range(1..=RENDER_SIZE.1),
                         );
                     });
                     ui.horizontal(|ui| {
@@ -794,28 +858,30 @@ impl App {
                     );
                     ui.separator();
                     ui.heading("Entity List");
-                    let nothing_selected = state.selected_entity == -1;
-                    for (i, _) in state.scene.spheres.iter().enumerate() {
-                        let selected = state.selected_entity == i as i32 && !nothing_selected;
-                        if ui.selectable_label(selected, "Sphere").clicked() {
-                            state.selected_entity = i as i32;
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        let nothing_selected = state.selected_entity == -1;
+                        for (i, _) in state.scene.spheres.iter().enumerate() {
+                            let selected = state.selected_entity == i as i32 && !nothing_selected;
+                            if ui.selectable_label(selected, "Sphere").clicked() {
+                                state.selected_entity = i as i32;
+                            }
                         }
-                    }
 
-                    for (i, m) in state.scene.meshes.iter().enumerate() {
-                        let selected = state.selected_entity - state.scene.spheres.len() as i32
-                            == i as i32
-                            && !nothing_selected;
-                        if ui
-                            .selectable_label(
-                                selected,
-                                m.label.clone().unwrap_or("Mesh".to_owned()),
-                            )
-                            .clicked()
-                        {
-                            state.selected_entity = (state.scene.spheres.len() + i) as i32;
+                        for (i, m) in state.scene.meshes.iter().enumerate() {
+                            let selected = state.selected_entity - state.scene.spheres.len() as i32
+                                == i as i32
+                                && !nothing_selected;
+                            if ui
+                                .selectable_label(
+                                    selected,
+                                    m.label.clone().unwrap_or("Mesh".to_owned()),
+                                )
+                                .clicked()
+                            {
+                                state.selected_entity = (state.scene.spheres.len() + i) as i32;
+                            }
                         }
-                    }
+                    });
                 });
 
             egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {
@@ -863,15 +929,12 @@ impl App {
         queue: &wgpu::Queue,
         path: String,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let width = 1920;
-        let height = 1080;
-
         // Calculate aligned bytes per row (wgpu requires 256-byte alignment)
         let bytes_per_pixel = 16; // RGBA
-        let unpadded_bytes_per_row = width * bytes_per_pixel;
+        let unpadded_bytes_per_row = RENDER_SIZE.0 * bytes_per_pixel;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as u32;
         let bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
-        let buffer_size = (bytes_per_row * height) as wgpu::BufferAddress;
+        let buffer_size = (bytes_per_row * RENDER_SIZE.1) as wgpu::BufferAddress;
 
         let buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Final Render Buffer"),
@@ -896,12 +959,12 @@ impl App {
                 layout: TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: Some(height),
+                    rows_per_image: Some(RENDER_SIZE.1),
                 },
             },
             Extent3d {
-                width,
-                height,
+                width: RENDER_SIZE.0,
+                height: RENDER_SIZE.1,
                 depth_or_array_layers: 1,
             },
         );
@@ -928,12 +991,12 @@ impl App {
         }
 
         let data = buffer_slice.get_mapped_range();
-        let mut image_data = Vec::with_capacity((width * height * 4) as usize);
+        let mut image_data = Vec::with_capacity((RENDER_SIZE.0 * RENDER_SIZE.1 * 4) as usize);
 
-        for y in 0..height {
+        for y in 0..RENDER_SIZE.1 {
             let row_start = (y * bytes_per_row) as usize;
 
-            for x in (0..width).rev() {
+            for x in (0..RENDER_SIZE.0).rev() {
                 let pixel_start = row_start + (x * bytes_per_pixel) as usize;
 
                 let r = f32::from_ne_bytes([
@@ -973,9 +1036,10 @@ impl App {
             }
         }
 
-        let mut image = ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, image_data)
-            .ok_or("Failed to create image from buffer")
-            .unwrap();
+        let mut image =
+            ImageBuffer::<image::Rgba<u8>, _>::from_raw(RENDER_SIZE.0, RENDER_SIZE.1, image_data)
+                .ok_or("Failed to create image from buffer")
+                .unwrap();
         image::imageops::flip_horizontal_in_place(&mut image);
         image::imageops::flip_vertical_in_place(&mut image);
         image.save(path.clone()).unwrap();

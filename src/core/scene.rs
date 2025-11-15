@@ -1,22 +1,20 @@
 use std::{
-    io::{BufReader, Cursor},
+    f32::consts::PI,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use egui::ahash::AHashMap;
 use glam::{Quat, Vec3};
 use rand::Rng;
 
 use crate::core::{
     asset::{
-        AssetManager, EntityDefinition, MaterialDefinition, MeshDefinition, Primitive,
-        TextureDefinition,
+        AssetManager, EntityDefinition, MaterialDefinition, MaterialFlag, MeshDefinition,
+        Primitive, TextureDefinition, TextureRef,
     },
     bvh::{self, BVH, MeshDataList, Node, Quality},
     camera::{CameraDescriptor, CameraUniform},
-    mesh::{Material, Mesh, Sphere, Transform, Vertex},
-    scene,
+    mesh::{Material, Mesh, MeshInstance, Sphere, Transform, Vertex},
 };
 
 use super::camera::Camera;
@@ -66,7 +64,7 @@ impl Default for SceneDefinition {
 pub struct Scene {
     pub camera: Camera,
     pub spheres: Vec<Sphere>,
-    pub meshes: Vec<Mesh>,
+    pub meshes: Vec<MeshInstance>,
     pub bvh_data: MeshDataList,
     pub bvh_quality: Quality,
     pub built_bvh: bool,
@@ -106,18 +104,25 @@ impl Scene {
             texture_map: vec![],
         }
     }
-    pub async fn instantiate_scene(
+    pub fn instantiate_scene(
         scene_definition: &SceneDefinition,
         asset_manager: &mut AssetManager,
     ) -> Scene {
         println!("Instantiating Scene");
         let mut spheres: Vec<Sphere> = vec![];
-        let mut meshes: Vec<Mesh> = vec![];
-        let textures: Vec<u32> = vec![];
+        let mut meshes: Vec<MeshInstance> = vec![];
         for (i, e) in scene_definition.entities.iter().enumerate() {
-            if let Some(_texture) = &e.material.texture {
+            let mut flag = MaterialFlag::NORMAL as i32;
+            let mut texture_ref = TextureRef::default();
+            if let Some(texture) = &e.material.texture {
                 // Handle loading texture (use asset_manager)
-                todo!()
+                match texture {
+                    TextureDefinition::FromFile { path } => {
+                        texture_ref = asset_manager.load_texture(&path);
+                        flag = MaterialFlag::TEXTURE as i32;
+                    }
+                    _ => (),
+                };
             }
             let material = Material {
                 color: e.material.color,
@@ -129,9 +134,11 @@ impl Scene {
                 smoothness: e.material.smoothness,
                 specular: e.material.specular,
                 ior: e.material.ior,
-                flag: e.material.flag as i32,
-                texture_index: textures.len() as u32,
-                _p1: 0.0,
+                flag,
+                texture_index: texture_ref.index,
+                width: texture_ref.width,
+                height: texture_ref.height,
+                _p1: [0.0; 3],
             };
             match &e.primitive {
                 Primitive::Sphere { centre, radius } => {
@@ -141,31 +148,20 @@ impl Scene {
                     match mesh_def {
                         MeshDefinition::FromFile { path } => {
                             // Load mesh using asset manager
-                            let (mesh_defs, _material_defs) = asset_manager.load_mesh(path).await;
-                            for (j, m) in mesh_defs.iter().enumerate() {
-                                match &m {
-                                    MeshDefinition::FromData { vertices, indices } => {
-                                        meshes.push(Mesh {
-                                            label: Some(format!("mesh_{}_{}", i, j)),
-                                            transform: e.transform,
-                                            vertices: vertices.clone(),
-                                            indices: indices.clone(),
-                                            material, //Todo: Use loaded material definitions
-                                        });
-                                    }
-                                    _ => panic!(
-                                        "Asset Manager should never return FromFile Definition"
-                                    ),
-                                }
-                            }
+                            let mut m = asset_manager.load_model(path, e.transform);
+                            meshes.append(&mut m);
                         }
-                        MeshDefinition::FromData { vertices, indices } => meshes.push(Mesh {
-                            label: Some(format!("mesh_{}", i)),
-                            transform: e.transform,
-                            vertices: vertices.clone(),
-                            indices: indices.clone(),
-                            material,
-                        }),
+                        MeshDefinition::FromData { vertices, indices } => {
+                            meshes.push(MeshInstance {
+                                label: Some(format!("mesh_{}", i)),
+                                transform: e.transform,
+                                mesh: Arc::new(Mesh {
+                                    vertices: vertices.clone(),
+                                    indices: indices.clone(),
+                                }),
+                                material,
+                            })
+                        }
                     };
                 }
             }
@@ -191,6 +187,37 @@ impl Scene {
         &self.bvh_data.nodes
     }
 
+    pub fn texture_test() -> SceneDefinition {
+        let mut scene_def = SceneDefinition::default();
+        scene_def.set_camera(&CameraDescriptor {
+            transform: Transform::cam(Vec3::NEG_Z, Vec3::ZERO),
+            ..Default::default()
+        });
+
+        scene_def.add_sphere(
+            Vec3::ZERO,
+            1.0,
+            MaterialDefinition {
+                label: Some("earth".to_string()),
+                color: [1.0, 0.0, 0.0, 1.0],
+                emission_color: [0.0; 4],
+                specular_color: [1.0; 4],
+                absorption: [0.0; 4],
+                absorption_stength: 0.0,
+                emission_strength: 0.0,
+                smoothness: 0.0,
+                specular: 0.05,
+                ior: 1.0,
+                flag: MaterialFlag::TEXTURE,
+                texture: Some(TextureDefinition::FromFile {
+                    path: "earthmap.png".to_string(),
+                }),
+            },
+        );
+
+        scene_def
+    }
+
     pub async fn obj_test() -> SceneDefinition {
         let mut scene_def = SceneDefinition::default();
         scene_def.set_camera(&CameraDescriptor {
@@ -204,7 +231,7 @@ impl Scene {
         scene_def.add_mesh(
             Transform::default(),
             MeshDefinition::FromFile {
-                path: Path::new("dragon.obj").to_path_buf(),
+                path: "dragon.obj".to_string(),
             },
             MaterialDefinition::new(),
         );
@@ -455,7 +482,7 @@ impl Scene {
 
         scene_def
     }
-    pub async fn room_2() -> SceneDefinition {
+    pub fn room_2() -> SceneDefinition {
         let mut scene = SceneDefinition::default();
 
         // Set camera
@@ -480,7 +507,7 @@ impl Scene {
                 scale: Vec3::splat(4.7),
             },
             MeshDefinition::FromFile {
-                path: PathBuf::from("Dragon_80K.obj"),
+                path: "Dragon_80K.obj".to_string(),
             },
             MaterialDefinition::new()
                 .color([0.96078, 0.11372, 0.4039, 1.0])
@@ -732,12 +759,62 @@ impl Scene {
         scene
     }
 
+    pub fn sponza() -> SceneDefinition {
+        let mut scene_def = SceneDefinition::default();
+
+        scene_def.set_camera(&CameraDescriptor {
+            transform: Transform::cam(Vec3::Y * 4.0, Vec3::X),
+            ..Default::default()
+        });
+
+        scene_def.add_mesh(
+            Transform {
+                pos: Vec3::ZERO,
+                rot: Quat::IDENTITY,
+                scale: Vec3::splat(0.05),
+            },
+            MeshDefinition::FromFile {
+                path: "sponza.obj".to_string(),
+            },
+            MaterialDefinition::texture_from_obj(),
+        );
+        scene_def.add_mesh(
+            Transform {
+                pos: Vec3::new(-15.0, 60.0, 0.0),
+                rot: Quat::from_rotation_x(PI / 2.0),
+                scale: Vec3::new(40.0, 20.0, 1.0),
+            },
+            MeshDefinition::from_data(Mesh::quad(), vec![0, 1, 2, 0, 2, 3]),
+            MaterialDefinition::default().emissive([1.0; 4], 4.0),
+        );
+
+        scene_def.add_sphere(
+            Vec3::new(5.0, 2.0, 0.0),
+            2.0,
+            MaterialDefinition {
+                label: None,
+                emission_color: [1.0; 4],
+                emission_strength: 10.0,
+                color: [1.0; 4],
+                specular_color: [1.0; 4],
+                absorption: [0.0; 4],
+                absorption_stength: 0.0,
+                smoothness: 0.0,
+                specular: 0.0,
+                ior: 1.0,
+                flag: MaterialFlag::NORMAL,
+                texture: None,
+            },
+        );
+        scene_def
+    }
+
     pub fn to_uniform(&self) -> SceneUniform {
         let mut n_vertices: u32 = 0;
         let mut n_indices: u32 = 0;
         for mesh in self.meshes.iter() {
-            n_vertices += mesh.vertices.len() as u32;
-            n_indices += mesh.indices.len() as u32;
+            n_vertices += mesh.mesh.vertices.len() as u32;
+            n_indices += mesh.mesh.indices.len() as u32;
         }
         SceneUniform {
             spheres: self.spheres.len() as u32,

@@ -1,26 +1,30 @@
-use std::{
-    collections::HashMap,
-    io::{BufReader, Cursor},
-    path::{Path, PathBuf},
-    sync::Arc,
+use std::{collections::HashMap, fs::File, io::Read, sync::Arc};
+
+use egui_wgpu::wgpu::{self};
+use glam::Vec3;
+use image::{ImageBuffer, Rgba};
+
+use crate::core::{
+    mesh::{Material, Mesh, MeshInstance, Transform, Vertex},
+    ray_tracer::MAX_TEXTURES,
 };
 
-use egui::ahash::AHashMap;
-use egui_wgpu::{Texture, wgpu};
-use glam::Vec3;
-
-use crate::core::mesh::{Mesh, Transform, Vertex};
-
 pub struct AssetManager {
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
-    meshes: HashMap<String, Arc<Mesh>>,
-    textures: HashMap<String, Arc<Texture>>,
+    loaded_meshes: HashMap<String, Arc<Mesh>>,
+    loaded_textures: HashMap<String, TextureRef>,
+    pub cpu_textures: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct TextureRef {
+    pub width: u32,
+    pub height: u32,
+    pub index: u32,
 }
 
 pub enum MeshDefinition {
     FromFile {
-        path: PathBuf,
+        path: String,
     },
     FromData {
         vertices: Arc<Vec<Vertex>>,
@@ -39,7 +43,7 @@ impl MeshDefinition {
 
 pub enum TextureDefinition {
     FromFile {
-        path: PathBuf,
+        path: String,
     },
     FromData {
         width: u32,
@@ -56,6 +60,7 @@ pub enum MaterialFlag {
 }
 
 pub struct MaterialDefinition {
+    pub label: Option<String>,
     pub color: [f32; 4],
     pub emission_color: [f32; 4],
     pub specular_color: [f32; 4],
@@ -69,10 +74,46 @@ pub struct MaterialDefinition {
     pub texture: Option<TextureDefinition>,
 }
 
+impl MaterialDefinition {
+    pub fn texture(path: String) -> MaterialDefinition {
+        MaterialDefinition {
+            flag: MaterialFlag::GLASS,
+            texture: Some(TextureDefinition::FromFile { path }),
+            ..Default::default()
+        }
+    }
+    pub fn texture_from_obj() -> MaterialDefinition {
+        MaterialDefinition {
+            flag: MaterialFlag::GLASS,
+            ..Default::default()
+        }
+    }
+}
+
+impl Default for MaterialDefinition {
+    fn default() -> Self {
+        Self {
+            label: None,
+            color: [0.7, 0.7, 0.7, 1.0],
+            emission_color: [0.0; 4],
+            specular_color: [1.0; 4],
+            absorption: [0.0; 4],
+            absorption_stength: 0.0,
+            emission_strength: 0.0,
+            smoothness: 1.0,
+            specular: 0.0,
+            ior: 1.0,
+            flag: MaterialFlag::NORMAL,
+            texture: None,
+        }
+    }
+}
+
 #[allow(unused)]
 impl MaterialDefinition {
     pub fn new() -> Self {
         Self {
+            label: None,
             color: [1.0, 1.0, 1.0, 1.0],
             emission_color: [1.0, 1.0, 1.0, 1.0],
             specular_color: [1.0, 1.0, 1.0, 1.0],
@@ -126,86 +167,156 @@ pub struct EntityDefinition {
 
 pub const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"));
 impl AssetManager {
-    pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) -> Self {
+    pub fn new() -> Self {
         Self {
-            device,
-            queue,
-            meshes: HashMap::new(),
-            textures: HashMap::new(),
+            loaded_meshes: HashMap::new(),
+            loaded_textures: HashMap::new(),
+            cpu_textures: vec![],
         }
     }
-    pub async fn load_string(path: &Path) -> anyhow::Result<String> {
-        assert!(
-            path.exists(),
-            "Text file does not exist: {}",
-            path.display()
-        );
+    pub fn load_texture(&mut self, path: &String) -> TextureRef {
+        println!("Loading Texture: {}", path);
+        if self.loaded_textures.len() == MAX_TEXTURES as usize {
+            panic!("Cannot load more than {} textures", MAX_TEXTURES);
+        }
+        // Check if we have already loaded this texture, then return its text_index
+        if let Some(texture_ref) = self.loaded_textures.get(path) {
+            return texture_ref.clone();
+        }
+        let mut buffer = vec![];
+        let file_path = std::path::Path::new(FILE).join("assets").join(path.clone());
+        File::open(file_path)
+            .unwrap()
+            .read_to_end(&mut buffer)
+            .unwrap();
+        let image = image::imageops::flip_horizontal(&image::load_from_memory(&buffer).unwrap());
+        println!("Image dimensions {} {}", image.width(), image.height());
 
-        Ok(std::fs::read_to_string(path)?)
+        let index = self.loaded_textures.len();
+
+        let texture_ref = TextureRef {
+            index: index as u32,
+            width: image.width(),
+            height: image.height(),
+        };
+        self.loaded_textures
+            .insert(path.clone(), texture_ref.clone());
+        self.cpu_textures.push(image);
+        texture_ref
     }
 
-    #[allow(unused)]
-    pub async fn load_binary(path: &Path) -> anyhow::Result<Vec<u8>> {
-        assert!(
-            path.exists(),
-            "Binary file does not exist: {}",
-            path.display()
-        );
-
-        Ok(std::fs::read(path)?)
-    }
-
-    pub async fn load_mesh(
-        &mut self,
-        path: &Path,
-    ) -> (Vec<MeshDefinition>, Vec<MaterialDefinition>) {
-        let mut mesh_defs: Vec<MeshDefinition> = vec![];
-        let mut material_defs: Vec<MaterialDefinition> = vec![];
+    pub fn load_model(&mut self, path: &String, transform: Transform) -> Vec<MeshInstance> {
+        println!("Loading model: {}", path);
+        let mut meshes: Vec<MeshInstance> = vec![];
+        let mut material_defs: Vec<Material> = vec![];
         let file_path = std::path::Path::new(FILE).join("assets").join(path);
 
-        let obj_text = AssetManager::load_string(&file_path).await.unwrap();
-        let obj_cursor = Cursor::new(obj_text);
-        let mut obj_reader = BufReader::new(obj_cursor);
-        let (models, _materials) = tobj::load_obj_buf(
-            &mut obj_reader,
+        let (models, materials) = tobj::load_obj(
+            file_path,
             &tobj::LoadOptions {
                 triangulate: true,
-                single_index: true,
-                ..Default::default() // Skip material loading
+                single_index: false,
+                ..Default::default()
             },
-            |_p| Ok((Vec::new(), AHashMap::default())),
         )
-        .unwrap();
+        .expect("Failed to load OBJ File");
+        if let Ok(materials) = materials {
+            for m in materials {
+                let color = m.diffuse.unwrap_or([0.7; 3]);
+                let spec = m.specular.unwrap_or([1.0; 3]);
+                let mut flag = match m.illumination_model.unwrap_or(0) {
+                    4 => MaterialFlag::GLASS,
+                    6 => MaterialFlag::GLASS,
+                    7 => MaterialFlag::GLASS,
+                    9 => MaterialFlag::GLASS,
+                    _ => MaterialFlag::NORMAL,
+                };
+                let texture_ref = if let Some(path) = &m.diffuse_texture {
+                    // Handle if there is a texture to be loaded
+                    flag = MaterialFlag::TEXTURE;
+                    self.load_texture(path)
+                } else {
+                    TextureRef::default()
+                };
+                material_defs.push(Material {
+                    color: [color[0], color[1], color[2], 1.0],
+                    emission_color: [color[0], color[1], color[2], 1.0],
+                    specular_color: [spec[0], spec[1], spec[2], 1.0],
+                    absorption: [0.0; 4],
+                    absorption_stength: 0.0,
+                    emission_strength: 0.0,
+                    smoothness: 0.0,
+                    specular: 0.05,
+                    // specular: m.shininess.unwrap_or(0.5).min(1.0),
+                    ior: m.optical_density.unwrap_or(1.0),
+                    flag: flag as i32,
+                    texture_index: texture_ref.index,
+                    width: texture_ref.width,
+                    height: texture_ref.height,
+                    _p1: [0.0; 3],
+                });
+            }
+        }
+
         for (i, m) in models.into_iter().enumerate() {
             let mut vertices = vec![];
-            let mut indices = vec![];
-            for (i, _) in (0..m.mesh.positions.len() / 3).enumerate() {
-                vertices.push(Vertex::new(
+            for (j, &vi) in m.mesh.indices.iter().enumerate() {
+                let pi = vi as usize;
+                let pos = Vec3::new(
+                    m.mesh.positions[3 * pi],
+                    m.mesh.positions[3 * pi + 1],
+                    m.mesh.positions[3 * pi + 2],
+                );
+
+                let normal = if !m.mesh.normals.is_empty() && !m.mesh.normal_indices.is_empty() {
+                    let ni = m.mesh.normal_indices[j] as usize;
                     Vec3::new(
-                        m.mesh.positions[i * 3],
-                        m.mesh.positions[i * 3 + 1],
-                        m.mesh.positions[i * 3 + 2],
-                    ),
+                        m.mesh.normals[3 * ni],
+                        m.mesh.normals[3 * ni + 1],
+                        m.mesh.normals[3 * ni + 2],
+                    )
+                } else if !m.mesh.normals.is_empty() {
+                    // fallback: just use the position index (may be wrong for some OBJ files)
+                    let ni = pi;
                     Vec3::new(
-                        m.mesh.normals[i * 3],
-                        m.mesh.normals[i * 3 + 1],
-                        m.mesh.normals[i * 3 + 2],
-                    ),
-                ));
+                        m.mesh.normals[3 * ni],
+                        m.mesh.normals[3 * ni + 1],
+                        m.mesh.normals[3 * ni + 2],
+                    )
+                } else {
+                    Vec3::ZERO
+                };
+
+                let uv = if !m.mesh.texcoords.is_empty() && !m.mesh.texcoord_indices.is_empty() {
+                    let ti = m.mesh.texcoord_indices[j] as usize; // j from enumerate()
+                    [m.mesh.texcoords[2 * ti], m.mesh.texcoords[2 * ti + 1]]
+                } else {
+                    [0.0, 0.0] // fallback for missing UVs
+                };
+
+                vertices.push(Vertex::with_uv(pos, normal, uv));
             }
-            for index in m.mesh.indices {
-                indices.push(index as u32);
-            }
+
+            let indices = (0..vertices.len() as u32).collect();
             // Make this return a whole Arc<Mesh> later, with fully loaded material.
             // Add path and Arc<Mesh> to meshes HashMap
             // Add any loaded textures to HashMap also
-            mesh_defs.push(MeshDefinition::FromData {
-                vertices: Arc::new(vertices),
-                indices: Arc::new(indices),
+            let material = if let Some(id) = m.mesh.material_id {
+                material_defs[id]
+            } else {
+                Material::new()
+            };
+            meshes.push(MeshInstance {
+                label: Some(m.name),
+                transform,
+                mesh: Arc::new(Mesh {
+                    vertices: Arc::new(vertices),
+                    indices: Arc::new(indices),
+                }),
+                material,
             });
-            material_defs.push(MaterialDefinition::new());
         }
 
-        return (mesh_defs, material_defs);
+        return meshes;
     }
 }

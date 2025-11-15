@@ -54,7 +54,9 @@ pub struct Material {
     pub ior: f32,
     pub flag: i32,
     pub texture_index: u32,
-    pub _p1: f32,
+    pub width: u32,
+    pub height: u32,
+    pub _p1: [f32; 3],
 }
 
 impl Material {
@@ -71,7 +73,9 @@ impl Material {
             ior: 0.0,
             flag: 0,
             texture_index: 0,
-            _p1: 0.0,
+            width: 0,
+            height: 0,
+            _p1: [0.0; 3],
         }
     }
 }
@@ -79,10 +83,14 @@ impl Material {
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Mesh {
-    pub label: Option<String>,
-    pub transform: Transform,
     pub vertices: Arc<Vec<Vertex>>,
     pub indices: Arc<Vec<u32>>,
+}
+
+pub struct MeshInstance {
+    pub label: Option<String>,
+    pub mesh: Arc<Mesh>,
+    pub transform: Transform,
     pub material: Material,
 }
 
@@ -115,25 +123,20 @@ impl Default for Transform {
     }
 }
 
-impl Mesh {
+impl MeshInstance {
     pub fn material(&mut self, material: Material) -> &Self {
         self.material = material;
         self
     }
-
-    pub fn quad(t: Transform) -> Vec<Vertex> {
-        let mut vertices = vec![
+}
+impl Mesh {
+    pub fn quad() -> Vec<Vertex> {
+        vec![
             Vertex::with_uv(Vec3::new(-1.0, -1.0, 0.0), Vec3::Z, [0.0, 0.0]),
             Vertex::with_uv(Vec3::new(1.0, -1.0, 0.0), Vec3::Z, [1.0, 0.0]),
             Vertex::with_uv(Vec3::new(1.0, 1.0, 0.0), Vec3::Z, [1.0, 1.0]),
             Vertex::with_uv(Vec3::new(-1.0, 1.0, 0.0), Vec3::Z, [0.0, 1.0]),
-        ];
-        for v in &mut vertices {
-            v.pos += t.pos;
-            v.normal = t.rot * v.normal;
-            v.pos = t.rot * v.pos;
-        }
-        vertices
+        ]
     }
 }
 

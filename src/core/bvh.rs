@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use glam::Vec3;
 
-use crate::core::mesh::{Mesh, MeshUniform, Vertex};
+use crate::core::mesh::{MeshInstance, MeshUniform, Vertex};
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct BVHTriangle {
@@ -145,14 +145,14 @@ impl BVH {
             quality: Quality::Disabled,
         }
     }
-    pub fn build_per_mesh(meshes: &Vec<Mesh>, quality: Quality) -> MeshDataList {
+    pub fn build_per_mesh(meshes: &Vec<MeshInstance>, quality: Quality) -> MeshDataList {
         println!("Building BVH {:#?}", quality);
         let mut stats = BVHStats::start();
         let mut data = MeshDataList::default();
         let mut mesh_lookup: HashMap<String, (usize, usize)> = HashMap::new();
 
-        for (i, mesh) in meshes.iter().enumerate() {
-            let key = if let Some(key) = mesh.label.clone() {
+        for (i, mesh_instance) in meshes.iter().enumerate() {
+            let key = if let Some(key) = mesh_instance.label.clone() {
                 key
             } else {
                 i.to_string()
@@ -160,8 +160,8 @@ impl BVH {
             if !mesh_lookup.contains_key(&key) {
                 mesh_lookup.insert(key.clone(), (data.nodes.len(), data.triangles.len()));
                 let mut bvh = BVH::build(
-                    mesh.vertices.clone(),
-                    mesh.indices.clone(),
+                    mesh_instance.mesh.vertices.clone(),
+                    mesh_instance.mesh.indices.clone(),
                     quality,
                     &mut stats,
                 );
@@ -169,14 +169,14 @@ impl BVH {
                 data.nodes.append(&mut bvh.nodes);
             }
             let (node_offset, triangle_offset) = mesh_lookup.get(&key).unwrap().clone();
-            let model_to_world = mesh.transform.to_matrix();
+            let model_to_world = mesh_instance.transform.to_matrix();
             data.mesh_uniforms.push(MeshUniform {
                 world_to_model: model_to_world.inverse().to_cols_array_2d(),
                 model_to_world: model_to_world.to_cols_array_2d(),
                 node_offset: node_offset as u32,
-                triangles: (mesh.indices.len() / 3) as u32,
+                triangles: (mesh_instance.mesh.indices.len() / 3) as u32,
                 triangle_offset: triangle_offset as u32,
-                material: mesh.material,
+                material: mesh_instance.material,
                 _p1: 0.0,
             });
         }

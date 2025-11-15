@@ -23,6 +23,8 @@ struct Material {
     ior: f32,
     flag: i32,
     texture_index: u32,
+    width: u32,
+    height: u32,
 }
 
 struct Sphere {
