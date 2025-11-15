@@ -202,9 +202,9 @@ impl AssetManager {
     ) -> Vec<MeshInstance> {
         let mut meshes = self.load_model(path, transform, load_materials);
         if !load_materials {
-            for mesh in &mut meshes {
+            meshes.iter_mut().for_each(|mesh| {
                 mesh.material = material;
-            }
+            });
         }
         meshes
     }
@@ -229,7 +229,7 @@ impl AssetManager {
         )
         .expect("Failed to load OBJ File");
         if load_materials && let Ok(materials) = materials {
-            for m in materials {
+            for m in materials.iter() {
                 let color = m.diffuse.unwrap_or([0.7; 3]);
                 let spec = m.specular.unwrap_or([1.0; 3]);
                 let mut flag = match m.illumination_model.unwrap_or(0) {
