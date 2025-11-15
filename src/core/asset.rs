@@ -11,7 +11,7 @@ use crate::core::{
 pub struct AssetManager {
     loaded_meshes: HashMap<String, Arc<Mesh>>,
     loaded_textures: HashMap<String, TextureRef>,
-    pub cpu_textures: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>,
+    // pub cpu_textures: Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -162,10 +162,13 @@ impl AssetManager {
         Self {
             loaded_meshes: HashMap::new(),
             loaded_textures: HashMap::new(),
-            cpu_textures: vec![],
         }
     }
-    pub fn load_texture(&mut self, path: &String) -> TextureRef {
+    pub fn load_texture(
+        &mut self,
+        path: &String,
+        textures: &mut Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
+    ) -> TextureRef {
         if self.loaded_textures.len() == MAX_TEXTURES as usize {
             panic!("Cannot load more than {} textures", MAX_TEXTURES);
         }
@@ -190,7 +193,9 @@ impl AssetManager {
         };
         self.loaded_textures
             .insert(path.clone(), texture_ref.clone());
-        self.cpu_textures.push(image);
+        let image = Arc::new(image);
+        textures.push(image.clone());
+
         texture_ref
     }
     pub fn load_model_with_material(
@@ -199,8 +204,9 @@ impl AssetManager {
         transform: Transform,
         load_materials: bool,
         material: Material,
+        textures: &mut Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
     ) -> Vec<MeshInstance> {
-        let mut meshes = self.load_model(path, transform, load_materials);
+        let mut meshes = self.load_model(path, transform, load_materials, textures);
         if !load_materials {
             meshes.iter_mut().for_each(|mesh| {
                 mesh.material = material;
@@ -214,6 +220,7 @@ impl AssetManager {
         path: &String,
         transform: Transform,
         load_materials: bool,
+        textures: &mut Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
     ) -> Vec<MeshInstance> {
         let mut meshes: Vec<MeshInstance> = vec![];
         let mut material_defs: Vec<Material> = vec![];
@@ -242,7 +249,7 @@ impl AssetManager {
                 let texture_ref = if let Some(path) = &m.diffuse_texture {
                     // Handle if there is a texture to be loaded
                     flag = MaterialFlag::TEXTURE;
-                    self.load_texture(path)
+                    self.load_texture(path, textures)
                 } else {
                     TextureRef::default()
                 };

@@ -146,7 +146,7 @@ impl BVH {
         }
     }
     pub fn build_per_mesh(meshes: &Vec<MeshInstance>, quality: Quality) -> MeshDataList {
-        println!("Building BVH {:#?}", quality);
+        log::info!("Building BVH {:#?}", quality);
         let mut stats = BVHStats::start();
         let mut data = MeshDataList::default();
         let mut mesh_lookup: HashMap<String, (usize, usize)> = HashMap::new();
@@ -180,7 +180,6 @@ impl BVH {
                 ..Default::default()
             });
         }
-        stats.print();
         data
     }
     pub fn build(
@@ -437,6 +436,7 @@ impl BVH {
     }
 }
 
+#[allow(unused)]
 pub struct BVHStats {
     start_time: Instant,
     leaf_count: u32,

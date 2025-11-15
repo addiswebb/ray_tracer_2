@@ -1,7 +1,16 @@
-use std::{f32::consts::PI, sync::Arc};
+use std::{
+    f32::consts::PI,
+    sync::{
+        Arc,
+        mpsc::{Receiver, Sender, channel},
+    },
+    time::Instant,
+};
 
 use glam::{Quat, Vec3};
+use image::{ImageBuffer, Rgba};
 use rand::Rng;
+use rayon::iter::IntoParallelRefIterator;
 
 use crate::core::{
     asset::{
@@ -16,7 +25,38 @@ use crate::core::{
 
 use super::camera::Camera;
 
-pub const SELECTABLE_SCENES: u32 = 5;
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum SceneName {
+    Balls,
+    RandomBalls,
+    Room,
+    Room2,
+    Metal,
+    Sponza,
+    Empty,
+}
+
+impl SceneName {
+    pub fn next(self) -> SceneName {
+        match self {
+            SceneName::Balls => SceneName::RandomBalls,
+            SceneName::RandomBalls => SceneName::Room,
+            SceneName::Room => SceneName::Room2,
+            SceneName::Room2 => SceneName::Metal,
+            SceneName::Metal => SceneName::Sponza,
+            SceneName::Sponza => SceneName::Balls,
+            _ => self,
+        }
+    }
+    pub const ALL: [SceneName; 6] = [
+        SceneName::Balls,
+        SceneName::RandomBalls,
+        SceneName::Room,
+        SceneName::Room2,
+        SceneName::Metal,
+        SceneName::Sponza,
+    ];
+}
 
 pub struct SceneDefinition {
     camera: Camera,
@@ -59,29 +99,40 @@ impl Default for SceneDefinition {
 
 pub struct SceneManager {
     pub scene: Scene,
-    pub selected_scene: i32,
+    pub selected_scene: SceneName,
     pub selected_entity: i32,
-    pub prev_scene: i32,
+    pub prev_scene: SceneName,
+    pub tx_request: Sender<SceneName>,
+    pub rx_loaded: Receiver<Scene>,
 }
 
 impl SceneManager {
-    pub fn new() -> Self {
+    pub fn new(mut asset_manager: AssetManager) -> Self {
+        let (tx_request, rx_request) = channel::<SceneName>();
+        let (tx_loaded, rx_loaded) = channel::<Scene>();
+
+        std::thread::spawn(move || {
+            while let Ok(scene_name) = rx_request.recv() {
+                let scene =
+                    Scene::instantiate_scene(&Scene::from_name(scene_name), &mut asset_manager);
+                tx_loaded.send(scene).unwrap();
+            }
+        });
+
         Self {
             scene: Scene::new(),
-            prev_scene: 0,
-            selected_scene: 0,
+            prev_scene: SceneName::Empty,
+            selected_scene: SceneName::Empty,
             selected_entity: -1,
+            tx_request,
+            rx_loaded,
         }
     }
-    pub fn load_scene(
-        &mut self,
-        scene_definition: &SceneDefinition,
-        assets: &mut AssetManager,
-        ray_tracer: &mut RayTracer,
-    ) {
-        println!("Loading Scene");
-        self.scene = Scene::instantiate_scene(scene_definition, assets);
-        ray_tracer.load_scene_gpu_resources(assets);
+    pub fn request_scene(&mut self, name: SceneName) {
+        log::info!("Loading Scene: {:?}", name);
+        self.selected_scene = name;
+        self.prev_scene = self.selected_scene;
+        self.tx_request.send(name).unwrap();
     }
 }
 
@@ -92,6 +143,7 @@ pub struct Scene {
     pub bvh_data: MeshDataList,
     pub bvh_quality: Quality,
     pub built_bvh: bool,
+    pub textures: Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
 }
 
 #[repr(C)]
@@ -124,14 +176,17 @@ impl Scene {
             bvh_data: MeshDataList::default(),
             bvh_quality: Quality::default(),
             built_bvh: false,
+            textures: vec![],
         }
     }
     pub fn instantiate_scene(
         scene_definition: &SceneDefinition,
         asset_manager: &mut AssetManager,
     ) -> Scene {
+        let now = Instant::now();
         let mut spheres: Vec<Sphere> = vec![];
         let mut meshes: Vec<MeshInstance> = vec![];
+        let mut textures: Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>> = vec![];
         for (i, e) in scene_definition.entities.iter().enumerate() {
             let mut flag = e.material.flag as i32;
             let mut texture_ref = TextureRef::default();
@@ -139,7 +194,7 @@ impl Scene {
                 // Handle loading texture (use asset_manager)
                 match texture {
                     TextureDefinition::FromFile { path } => {
-                        texture_ref = asset_manager.load_texture(&path);
+                        texture_ref = asset_manager.load_texture(&path, &mut textures);
                         flag = MaterialFlag::TEXTURE as i32;
                     }
                     _ => (),
@@ -167,16 +222,14 @@ impl Scene {
                 }
                 Primitive::Mesh(mesh_def) => {
                     match mesh_def {
-                        MeshDefinition::FromFile {
-                            path,
-                            use_mtl,
-                        } => {
+                        MeshDefinition::FromFile { path, use_mtl } => {
                             // Load mesh using asset manager
                             let mut m = asset_manager.load_model_with_material(
                                 path,
                                 e.transform,
                                 *use_mtl,
                                 material,
+                                &mut textures,
                             );
                             meshes.append(&mut m);
                         }
@@ -195,9 +248,10 @@ impl Scene {
                 }
             }
         }
-
+        println!("Instatiated scene in: {:?}", Instant::now() - now);
+        let now = Instant::now();
         let bvh_data = BVH::build_per_mesh(&meshes, bvh::Quality::High);
-
+        println!("Built BVH in: {:?}", Instant::now() - now);
         Self {
             camera: scene_definition.camera,
             spheres,
@@ -205,6 +259,7 @@ impl Scene {
             bvh_data,
             bvh_quality: bvh::Quality::High,
             built_bvh: true,
+            textures,
         }
     }
     pub fn bvh(&mut self) -> &Vec<Node> {
@@ -868,6 +923,18 @@ impl Scene {
             camera: self.camera.to_uniform(),
             nodes: self.bvh_data.nodes.len() as u32,
             padding: [0.0; 6],
+        }
+    }
+
+    fn from_name(scene_name: SceneName) -> SceneDefinition {
+        match scene_name {
+            SceneName::Balls => Scene::balls(),
+            SceneName::RandomBalls => Scene::random_balls(),
+            SceneName::Room => Scene::room(),
+            SceneName::Room2 => Scene::room_2(),
+            SceneName::Metal => Scene::metal(),
+            SceneName::Sponza => Scene::sponza(),
+            SceneName::Empty => todo!(),
         }
     }
 }

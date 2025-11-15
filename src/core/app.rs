@@ -21,9 +21,9 @@ use winit::{
 
 use crate::core::{
     egui::UiContext,
-    engine::{Engine, FrameTiming, RENDER_SIZE},
+    engine::{Engine, RENDER_SIZE},
     ray_tracer::DebugMode,
-    scene::Scene,
+    scene::SceneName,
 };
 
 #[repr(C)]
@@ -124,6 +124,15 @@ impl App {
         let timing = &mut engine.timing;
         timing.update(dt);
 
+        if let Ok(scene) = engine.scene_manager.rx_loaded.try_recv() {
+            engine.scene_manager.scene = scene;
+            engine
+                .ray_tracer
+                .load_scene_gpu_resources(&engine.scene_manager.scene);
+            timing.reset();
+            engine.params.reset_frame();
+        }
+
         let camera_moved = engine.scene_manager.scene.camera.update_camera(dt);
         let reset_frame = engine.params.update(camera_moved);
         if camera_moved || reset_frame {
@@ -131,66 +140,18 @@ impl App {
         }
 
         if engine.scene_manager.selected_scene != engine.scene_manager.prev_scene {
-            log::info!("Changing Scene: {}", engine.scene_manager.selected_scene);
-            // Todo: Make this work with new thing
-            match engine.scene_manager.selected_scene {
-                0 => {
-                    engine.scene_manager.load_scene(
-                        &Scene::balls(),
-                        &mut engine.assets,
-                        &mut engine.ray_tracer,
-                    );
-                }
-                1 => {
-                    engine.scene_manager.load_scene(
-                        &Scene::room(),
-                        &mut engine.assets,
-                        &mut engine.ray_tracer,
-                    );
-                }
-                2 => {
-                    engine.scene_manager.load_scene(
-                        &Scene::metal(),
-                        &mut engine.assets,
-                        &mut engine.ray_tracer,
-                    );
-                }
-                3 => {
-                    engine.scene_manager.load_scene(
-                        &Scene::random_balls(),
-                        &mut engine.assets,
-                        &mut engine.ray_tracer,
-                    );
-                }
-                4 => {
-                    engine.scene_manager.load_scene(
-                        &Scene::room_2(),
-                        &mut engine.assets,
-                        &mut engine.ray_tracer,
-                    );
-                }
-                5 => {
-                    engine.scene_manager.load_scene(
-                        &Scene::sponza(),
-                        &mut engine.assets,
-                        &mut engine.ray_tracer,
-                    );
-                }
-                _ => (),
-            }
-            engine.scene_manager.prev_scene = engine.scene_manager.selected_scene;
+            engine
+                .scene_manager
+                .request_scene(engine.scene_manager.selected_scene.clone());
         }
         engine.resources.queue.write_buffer(
             &engine.resources.params_buffer,
             0,
             bytemuck::cast_slice(&[engine.params.for_buffer(camera_moved || engine.tmp.low_res)]),
         );
-        // Todo: investigate performance effects of this
-        if engine.tmp.update_buffers {
-            engine
-                .ray_tracer
-                .update_buffers(&engine.resources.queue, &mut engine.scene_manager.scene);
-        }
+        engine
+            .ray_tracer
+            .update_buffers(&engine.resources.queue, &mut engine.scene_manager.scene);
     }
 
     fn handle_input(&mut self, event: &WindowEvent) -> bool {
@@ -219,10 +180,8 @@ impl App {
                 }
                 KeyCode::KeyQ => {
                     if key_state.is_pressed() {
-                        engine.scene_manager.selected_scene += 1;
-                        if engine.scene_manager.selected_scene > 5 {
-                            engine.scene_manager.selected_scene = 0;
-                        }
+                        engine.scene_manager.selected_scene =
+                            engine.scene_manager.selected_scene.next();
                         engine.params.reset_frame();
                         engine.timing.reset();
                     }
@@ -241,7 +200,7 @@ impl App {
                 }
                 KeyCode::KeyP => {
                     if key_state.is_pressed() {
-                        println!("Saving Render to file");
+                        log::info!("Saving Render to file");
                         let _ = App::save_render_to_file(
                             &engine.resources.texture,
                             &engine.resources.device,
@@ -486,7 +445,7 @@ impl App {
         image.save(path.clone()).unwrap();
         drop(data);
         buffer.unmap();
-        println!("Saved Render to {}", path);
+        log::info!(" - Saved Render to {}", path);
         Ok(())
     }
 }

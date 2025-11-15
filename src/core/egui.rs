@@ -13,7 +13,7 @@ use crate::core::{
     app::{DEBUG_MODES, Params},
     bvh,
     engine::{FrameTiming, RENDER_SIZE, TmpResources},
-    scene::{SELECTABLE_SCENES, SceneManager},
+    scene::{SceneManager, SceneName},
 };
 pub struct UiContext<'a> {
     pub renderer: &'a mut crate::core::renderer::Renderer,
@@ -140,10 +140,17 @@ impl EguiRenderer {
                     params.skybox = skybox as i32;
                     ui.horizontal(|ui| {
                         ui.label("Scene ID");
-                        ui.add(
-                            egui::DragValue::new(&mut ctx.scene_manager.selected_scene)
-                                .range(0..=SELECTABLE_SCENES),
-                        );
+                        egui::ComboBox::from_label("Scene")
+                            .selected_text(format!("{:?}", ctx.scene_manager.selected_scene))
+                            .show_ui(ui, |ui| {
+                                for &scene in SceneName::ALL.iter() {
+                                    ui.selectable_value(
+                                        &mut ctx.scene_manager.selected_scene,
+                                        scene,
+                                        format!("{:?}", scene),
+                                    );
+                                }
+                            });
                     });
                     if ctx.scene_manager.selected_entity != -1 {
                         ui.separator();

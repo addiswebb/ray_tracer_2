@@ -17,7 +17,7 @@ use crate::core::{
     egui::EguiRenderer,
     ray_tracer::{MAX_TEXTURES, RayTracer},
     renderer::Renderer,
-    scene::{Scene, SceneManager},
+    scene::{Scene, SceneManager, SceneName},
 };
 
 pub struct TmpResources {
@@ -207,7 +207,6 @@ pub struct Engine {
     pub ray_tracer: RayTracer,
     pub renderer: Renderer,
     pub egui: EguiRenderer,
-    pub assets: AssetManager,
     pub timing: FrameTiming,
     pub scene_manager: SceneManager,
     pub params: Params,
@@ -221,7 +220,6 @@ impl Engine {
             GraphicsResources::create_graphics_resources(window.clone(), width, height).await;
         let mut ray_tracer = RayTracer::new(resources.device.clone(), resources.queue.clone());
         ray_tracer.create_gpu_resources(&resources.texture_view, &resources.params_buffer);
-        let mut asset_manager = AssetManager::new();
 
         let mut egui_renderer = EguiRenderer::new(
             resources.device.clone(),
@@ -240,8 +238,9 @@ impl Engine {
         )
         .unwrap();
 
-        let mut scene_manager = SceneManager::new();
-        scene_manager.load_scene(&Scene::room_2(), &mut asset_manager, &mut ray_tracer);
+        let asset_manager = AssetManager::new();
+        let mut scene_manager = SceneManager::new(asset_manager);
+        scene_manager.request_scene(SceneName::Room2);
 
         let timing = FrameTiming::new();
         let params = Params {
@@ -258,7 +257,6 @@ impl Engine {
             ray_tracer,
             renderer,
             egui: egui_renderer,
-            assets: asset_manager,
             timing,
             scene_manager,
             params,

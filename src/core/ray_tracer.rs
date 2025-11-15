@@ -232,11 +232,11 @@ impl RayTracer {
             bvh_nodes_buffer,
         }
     }
-    pub fn load_scene_gpu_resources(&mut self, assets: &mut AssetManager) {
+    pub fn load_scene_gpu_resources(&mut self, scene: &Scene) {
         let mut gpu_textures = Vec::new();
         let mut gpu_texture_views = Vec::new();
         let mut loaded_textures: u32 = 0;
-        for (i, image) in assets.cpu_textures.iter().enumerate() {
+        for (i, image) in scene.textures.iter().enumerate() {
             loaded_textures += 1;
             let t = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(format!("t_{}", i).as_str()),
