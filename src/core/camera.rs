@@ -69,11 +69,10 @@ impl Camera {
         Camera {
             transform: camera_descriptor.transform,
             fov: camera_descriptor.fov,
-            // aspect: camera_descriptor.aspect,
-            aspect: 16.0 / 9.0,
+            aspect: camera_descriptor.aspect,
             near: camera_descriptor.near,
             far: camera_descriptor.far,
-            focus_dist: camera_descriptor.focus_dist.min(1.0),
+            focus_dist: camera_descriptor.focus_dist.max(1.0),
             controller: CameraController::new(10.0, 1.8),
             defocus_strength: camera_descriptor.defocus_strength,
             diverge_strength: camera_descriptor.diverge_strength,

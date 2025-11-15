@@ -25,27 +25,24 @@ use winit::{
 };
 
 use crate::core::{
-    asset::AssetManager,
-    bvh::{self},
-    egui::EguiRenderer,
-    ray_tracer::{MAX_TEXTURES, RayTracer},
-    renderer::Renderer,
+    egui::UiContext,
+    engine::{Engine, RENDER_SIZE},
     scene::Scene,
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug, PartialEq)]
 pub struct Params {
-    width: u32,
-    height: u32,
-    number_of_bounces: i32,
-    rays_per_pixel: i32,
-    skybox: i32,
-    frames: i32,
-    accumulate: i32,
-    debug_flag: i32,
-    debug_scale: i32,
-    _p1: [f32; 3],
+    pub width: u32,
+    pub height: u32,
+    pub number_of_bounces: i32,
+    pub rays_per_pixel: i32,
+    pub skybox: i32,
+    pub frames: i32,
+    pub accumulate: i32,
+    pub debug_flag: i32,
+    pub debug_scale: i32,
+    pub _p1: [f32; 3],
 }
 impl Default for Params {
     fn default() -> Self {
@@ -63,196 +60,18 @@ impl Default for Params {
         }
     }
 }
-
-#[allow(unused)]
-pub struct AppState {
-    pub device: Arc<wgpu::Device>,
-    pub queue: Arc<wgpu::Queue>,
-    pub surface_config: wgpu::SurfaceConfiguration,
-    pub surface: wgpu::Surface<'static>,
-    pub scale_factor: f32,
-    pub ray_tracer: RayTracer,
-    pub egui_renderer: EguiRenderer,
-    pub params: Params,
-    pub scene: Scene,
-    pub selected_scene: i32,
-    pub texture: wgpu::Texture,
-    pub texture_view: TextureView,
-    pub prev_scene: i32,
-    pub params_buffer: wgpu::Buffer,
-    pub mouse_pressed: bool,
-    pub renderer: Renderer,
-    pub use_mouse: bool,
-    pub dt: Duration,
-    pub average_frame_time: Duration,
-    pub selected_entity: i32,
-    pub asset_manager: AssetManager,
-}
-
-const DEBUG_MODES: u32 = 8;
-const RENDER_SIZE: (u32, u32) = (1920, 1080);
-
-impl AppState {
-    async fn new(
-        instance: &wgpu::Instance,
-        surface: wgpu::Surface<'static>,
-        window: &Window,
-        width: u32,
-        height: u32,
-    ) -> Self {
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .expect("Failed to find appropriate adapter");
-
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                    | wgpu::Features::TEXTURE_BINDING_ARRAY
-                    | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
-                required_limits: Limits {
-                    max_binding_array_elements_per_shader_stage: MAX_TEXTURES as u32,
-                    ..Default::default()
-                },
-                memory_hints: Default::default(),
-                trace: Default::default(),
-            })
-            .await
-            .expect("Failed to find device");
-
-        let swapchain_capabilities = surface.get_capabilities(&adapter);
-        let selected_format = wgpu::TextureFormat::Bgra8UnormSrgb;
-        let swapchain_format = swapchain_capabilities
-            .formats
-            .iter()
-            .find(|d| **d == selected_format)
-            .expect("Failed to select proper surface texture format");
-
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: *swapchain_format,
-            width,
-            height,
-            present_mode: wgpu::PresentMode::Immediate,
-            desired_maximum_frame_latency: 0,
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![],
-        };
-
-        surface.configure(&device, &surface_config);
-
-        let params = Params {
-            width: RENDER_SIZE.0,
-            height: RENDER_SIZE.1,
-            number_of_bounces: 4,
-            rays_per_pixel: 2,
-            skybox: 1,
-            frames: 0,
-            accumulate: 1,
-            debug_flag: 0,
-            debug_scale: 10,
-            _p1: [0.0; 3],
-        };
-        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Param buffer"),
-            contents: bytemuck::bytes_of(&params),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Render Texture"),
-            size: wgpu::Extent3d {
-                width: params.width,
-                height: params.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba32Float,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::STORAGE_BINDING
-                | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let device = Arc::new(device);
-        let queue = Arc::new(queue);
-
-        let mut ray_tracer = RayTracer::new(device.clone(), queue.clone());
-
-        let mut asset_manager = AssetManager::new();
-        let scene = Scene::instantiate_scene(&Scene::sponza(), &mut asset_manager);
-
-        ray_tracer.create_gpu_resources(&texture_view, &params_buffer, &asset_manager.cpu_textures);
-        let mut egui_renderer =
-            EguiRenderer::new(device.clone(), surface_config.format, None, 1, window);
-
-        let renderer = Renderer::new(
-            device.clone(),
-            &mut egui_renderer.renderer,
-            &texture_view,
-            &surface_config,
-            &params_buffer,
-        )
-        .unwrap();
-
-        Self {
-            device,
-            queue,
-            surface,
-            surface_config,
-            egui_renderer,
-            ray_tracer,
-            params,
-            scene,
-            texture,
-            texture_view,
-            scale_factor: 1.0,
-            selected_scene: 0,
-            params_buffer,
-            prev_scene: 0,
-            mouse_pressed: false,
-            renderer,
-            use_mouse: false,
-            dt: Duration::ZERO,
-            average_frame_time: Duration::ZERO,
-            selected_entity: -1,
-            asset_manager,
-        }
-    }
-
-    fn resize_surface(&mut self, width: u32, height: u32) {
-        self.surface_config.width = width;
-        self.surface_config.height = height;
-        self.surface.configure(&self.device, &self.surface_config);
-    }
-}
+pub const DEBUG_MODES: u32 = 8;
 
 pub struct App {
-    instance: wgpu::Instance,
-    state: Option<AppState>,
+    engine: Option<Engine>,
     window: Option<Arc<Window>>,
-    last_render_time: Instant,
 }
 
 impl App {
     pub fn new() -> Self {
-        let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
-            ..Default::default()
-        });
         Self {
-            instance,
-            state: None,
             window: None,
-            last_render_time: Instant::now(),
+            engine: None,
         }
     }
     pub async fn set_window(&mut self, window: Window) {
@@ -262,124 +81,104 @@ impl App {
 
         let _ = window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
 
-        let surface = self
-            .instance
-            .create_surface(window.clone())
-            .expect("Failed to create surface");
-
-        let state = AppState::new(
-            &self.instance,
-            surface,
-            &window,
-            initial_width,
-            initial_height,
-        )
-        .await;
+        let engine = Engine::new(window.clone(), RENDER_SIZE.0, RENDER_SIZE.1).await;
 
         self.window.get_or_insert(window);
-        self.state.get_or_insert(state);
+        self.engine.get_or_insert(engine);
     }
-
     fn handle_resized(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
-            let state = self.state.as_mut().unwrap();
-            state.resize_surface(width, height);
+            self.engine
+                .as_mut()
+                .unwrap()
+                .resources
+                .resize_surface(width, height);
         }
     }
 
     pub fn update(&mut self, dt: Duration) {
-        let state = self.state.as_mut().unwrap();
-        state.dt = dt;
-        state.average_frame_time += dt;
-        state.average_frame_time /= 2;
-        state.scene.camera.update_camera(dt);
-        if state.scene.camera.controller.is_moving() {
-            state.params.frames = -1;
-            state.average_frame_time = Duration::ZERO;
+        let engine = self.engine.as_mut().unwrap();
+        let timing = &mut engine.timing;
+        timing.dt = dt;
+        timing.average_frame_time += dt;
+        timing.average_frame_time /= 2;
+
+        engine.scene_manager.scene.camera.update_camera(dt);
+        if engine.scene_manager.scene.camera.controller.is_moving() {
+            engine.params.frames = -1;
+            timing.average_frame_time = Duration::ZERO;
         }
-        if state.params.accumulate != 0 {
-            state.params.frames += 1;
+        if engine.params.accumulate != 0 {
+            engine.params.frames += 1;
         } else {
             // Reset Accumulation
-            state.params.frames = -1;
-            state.average_frame_time = Duration::ZERO;
+            engine.params.frames = -1;
+            timing.average_frame_time = Duration::ZERO;
         }
-        if state.selected_scene != state.prev_scene {
-            log::info!("Changing Scene: {}", state.selected_scene);
+        if engine.scene_manager.selected_scene != engine.scene_manager.prev_scene {
+            log::info!("Changing Scene: {}", engine.scene_manager.selected_scene);
             // Todo: Make this work with new thing
-            match state.selected_scene {
+            match engine.scene_manager.selected_scene {
                 0 => {
-                    state.scene =
-                        Scene::instantiate_scene(&Scene::balls(), &mut state.asset_manager);
-                    state.ray_tracer.create_gpu_resources(
-                        &state.texture_view,
-                        &state.params_buffer,
-                        &state.asset_manager.cpu_textures,
+                    engine.scene_manager.load_scene(
+                        &Scene::balls(),
+                        &mut engine.assets,
+                        &mut engine.ray_tracer,
                     );
                 }
                 1 => {
-                    state.scene =
-                        Scene::instantiate_scene(&Scene::room(), &mut state.asset_manager);
-                    state.ray_tracer.create_gpu_resources(
-                        &state.texture_view,
-                        &state.params_buffer,
-                        &state.asset_manager.cpu_textures,
+                    engine.scene_manager.load_scene(
+                        &Scene::room(),
+                        &mut engine.assets,
+                        &mut engine.ray_tracer,
                     );
                 }
                 2 => {
-                    state.scene =
-                        Scene::instantiate_scene(&Scene::metal(), &mut state.asset_manager);
-                    state.ray_tracer.create_gpu_resources(
-                        &state.texture_view,
-                        &state.params_buffer,
-                        &state.asset_manager.cpu_textures,
+                    engine.scene_manager.load_scene(
+                        &Scene::metal(),
+                        &mut engine.assets,
+                        &mut engine.ray_tracer,
                     );
                 }
                 3 => {
-                    state.scene =
-                        Scene::instantiate_scene(&Scene::random_balls(), &mut state.asset_manager);
-                    state.ray_tracer.create_gpu_resources(
-                        &state.texture_view,
-                        &state.params_buffer,
-                        &state.asset_manager.cpu_textures,
+                    engine.scene_manager.load_scene(
+                        &Scene::random_balls(),
+                        &mut engine.assets,
+                        &mut engine.ray_tracer,
                     );
                 }
                 4 => {
-                    state.scene =
-                        Scene::instantiate_scene(&Scene::room_2(), &mut state.asset_manager);
-                    state.ray_tracer.create_gpu_resources(
-                        &state.texture_view,
-                        &state.params_buffer,
-                        &state.asset_manager.cpu_textures,
+                    engine.scene_manager.load_scene(
+                        &Scene::room_2(),
+                        &mut engine.assets,
+                        &mut engine.ray_tracer,
                     );
                 }
                 5 => {
-                    state.scene =
-                        Scene::instantiate_scene(&Scene::sponza(), &mut state.asset_manager);
-                    state.ray_tracer.create_gpu_resources(
-                        &state.texture_view,
-                        &state.params_buffer,
-                        &state.asset_manager.cpu_textures,
+                    engine.scene_manager.load_scene(
+                        &Scene::sponza(),
+                        &mut engine.assets,
+                        &mut engine.ray_tracer,
                     );
                 }
                 _ => (),
             }
-            state.prev_scene = state.selected_scene;
+            engine.scene_manager.prev_scene = engine.scene_manager.selected_scene;
         }
-        state.queue.write_buffer(
-            &state.params_buffer,
+        engine.resources.queue.write_buffer(
+            &engine.resources.params_buffer,
             0,
-            bytemuck::cast_slice(&[state.params]),
+            bytemuck::cast_slice(&[engine.params]),
         );
         // Todo: investigate performance effects of this
-        state
+        engine
             .ray_tracer
-            .update_buffers(&state.queue, &mut state.scene);
+            .update_buffers(&engine.resources.queue, &mut engine.scene_manager.scene);
     }
 
     fn handle_input(&mut self, event: &WindowEvent) -> bool {
-        let state = self.state.as_mut().unwrap();
-        if !state.use_mouse {
+        let engine = self.engine.as_mut().unwrap();
+        if !engine.tmp.use_mouse {
             return false;
         }
         match event {
@@ -393,7 +192,7 @@ impl App {
                 ..
             } => match key {
                 KeyCode::Escape => {
-                    state.use_mouse = false;
+                    engine.tmp.use_mouse = false;
                     let window = self.window.as_mut().unwrap();
                     window.set_cursor_visible(true);
                     window
@@ -403,21 +202,21 @@ impl App {
                 }
                 KeyCode::KeyQ => {
                     if key_state.is_pressed() {
-                        state.selected_scene += 1;
-                        if state.selected_scene > 3 {
-                            state.selected_scene = 0;
+                        engine.scene_manager.selected_scene += 1;
+                        if engine.scene_manager.selected_scene > 3 {
+                            engine.scene_manager.selected_scene = 0;
                         }
                     }
                     true
                 }
                 KeyCode::KeyE => {
                     if key_state.is_pressed() {
-                        state.params.debug_flag += 1;
-                        if state.selected_scene > DEBUG_MODES as i32 {
-                            state.selected_scene = 0;
+                        engine.params.debug_flag += 1;
+                        if engine.scene_manager.selected_scene > DEBUG_MODES as i32 {
+                            engine.scene_manager.selected_scene = 0;
                         }
-                        state.params.frames = -1;
-                        state.average_frame_time = Duration::ZERO;
+                        engine.params.frames = -1;
+                        engine.timing.average_frame_time = Duration::ZERO;
                     }
                     true
                 }
@@ -425,16 +224,17 @@ impl App {
                     if key_state.is_pressed() {
                         println!("Saving Render to file");
                         let _ = App::save_render_to_file(
-                            &state.texture,
-                            &state.device,
-                            &state.queue,
+                            &engine.resources.texture,
+                            &engine.resources.device,
+                            &engine.resources.queue,
                             "C:/users/addis/downloads/test.png".to_string(),
                         )
                         .unwrap();
                     }
                     true
                 }
-                _ => state
+                _ => engine
+                    .scene_manager
                     .scene
                     .camera
                     .controller
@@ -445,7 +245,7 @@ impl App {
                 state: button_state,
                 ..
             } => {
-                state.mouse_pressed = *button_state == winit::event::ElementState::Pressed;
+                engine.tmp.mouse_pressed = *button_state == winit::event::ElementState::Pressed;
                 true
             }
             _ => false,
@@ -453,7 +253,7 @@ impl App {
     }
 
     fn handle_redraw(&mut self) {
-        let state = self.state.as_mut().unwrap();
+        let engine = self.engine.as_mut().unwrap();
 
         // Skip if window is minimized (maybe unwanted behaviour)
         if let Some(window) = self.window.as_ref() {
@@ -465,454 +265,37 @@ impl App {
             }
         }
 
-        let screen_descriptor = ScreenDescriptor {
-            size_in_pixels: [state.surface_config.width, state.surface_config.height],
-            pixels_per_point: self.window.as_ref().unwrap().scale_factor() as f32
-                * state.scale_factor,
-        };
+        let screen_descriptor = engine
+            .resources
+            .create_screen_descriptor(self.window.as_ref().unwrap().clone());
 
-        let surface_texture = state.surface.get_current_texture();
+        let (surface_texture, surface_view) = engine.resources.get_surface_view_and_texture();
 
-        match surface_texture {
-            Err(SurfaceError::Outdated) => {
-                log::error!("Wgpu Surface Outdated");
-                return;
-            }
-            Err(_) => {
-                surface_texture.expect("Failed to aquire next swap chain texture");
-                return;
-            }
-            Ok(_) => {}
-        };
-
-        let surface_texture = surface_texture.unwrap();
-        let surface_view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = state
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut encoder = engine.resources.create_command_encoder();
 
         let window = self.window.as_mut().unwrap();
-        let mut camera = state.scene.camera.clone();
-        let mut params = state.params.clone();
 
         // Ray Tracer Pass
-        state
+        engine
             .ray_tracer
-            .render(&mut encoder, params.width, params.height);
+            .render(&mut encoder, engine.params.width, engine.params.height);
 
         // Render egui and Ray Tracer output
         {
-            state.egui_renderer.begin_frame(window);
+            engine.egui.begin_frame(window);
+            let mut ui_ctx = UiContext {
+                renderer: &mut engine.renderer,
+                scene_manager: &mut engine.scene_manager,
+                timing: &mut engine.timing,
+                tmp: &mut engine.tmp,
+                params: &mut engine.params,
+                window: window.clone(),
+            };
+            engine.egui.render_ui(&mut ui_ctx);
 
-            let mut skybox = params.skybox != 0;
-            let mut accumulate = params.accumulate != 0;
-            egui::TopBottomPanel::top("menu").show(state.egui_renderer.context(), |ui| {
-                egui::MenuBar::new().ui(ui, |ui| {
-                    ui.menu_button("File", |ui| {
-                        if ui.button("Quit").clicked() {
-                            log::warn!("idk how to close the window like this..");
-                        }
-                    });
-                });
-            });
-
-            egui::SidePanel::right("Inspector")
-                .resizable(true)
-                .width_range(200.0..=400.0)
-                .show(state.egui_renderer.context(), |ui| {
-                    ui.heading("Inspector");
-                    ui.separator();
-                    ui.heading("Camera");
-                    ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut camera.transform.pos.x).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.transform.pos.y).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.transform.pos.z).speed(0.01));
-                        ui.label(format!("Position"));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut camera.transform.rot.x).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.transform.rot.y).speed(0.01));
-                        ui.add(egui::DragValue::new(&mut camera.transform.rot.z).speed(0.01));
-                        ui.label(format!("Look At"));
-                    });
-                    ui.add(egui::Slider::new(&mut camera.fov, 10.0..=90.0).text("Fov"));
-                    ui.add(
-                        egui::Slider::new(&mut params.number_of_bounces, 0..=100).text("Bounces"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut params.rays_per_pixel, 0..=100)
-                            .text("Rays Per Pixel"),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut accumulate, "Accumulate");
-                        if ui.button("Clear").clicked() {
-                            params.frames = -1;
-                        }
-                    });
-
-                    ui.add(
-                        egui::Slider::new(&mut camera.diverge_strength, 0.0..=100.0)
-                            .step_by(0.1)
-                            .text("Diverge Strength"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut camera.defocus_strength, 0.0..=100.0)
-                            .step_by(0.1)
-                            .text("Defocus Strength"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut camera.focus_dist, 0.0..=10.0)
-                            .step_by(0.01)
-                            .text("Focus Distance"),
-                    );
-                    ui.separator();
-                    ui.heading("Scene");
-                    ui.checkbox(&mut skybox, "Skybox");
-                    ui.horizontal(|ui| {
-                        ui.label("Scene ID");
-                        ui.add(egui::DragValue::new(&mut state.selected_scene).range(0..=5));
-                    });
-                    if state.selected_entity != -1 {
-                        ui.separator();
-                        if state.selected_entity < state.scene.spheres.len() as i32 {
-                            let s = &mut state.scene.spheres[state.selected_entity as usize];
-                            ui.heading("Sphere");
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut s.pos[0]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut s.pos[1]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut s.pos[2]).speed(0.01));
-                                ui.label(format!("Position"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut s.radius).speed(0.01));
-                                ui.label(format!("Radius"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut s.material.color[0]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut s.material.color[1]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut s.material.color[2]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut s.material.color[3]).speed(0.01));
-                                ui.label(format!("Color"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.emission_color[0])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.emission_color[1])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.emission_color[2])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.emission_color[3])
-                                        .speed(0.01),
-                                );
-                                ui.label(format!("Emissive Color"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.emission_strength)
-                                        .speed(0.01),
-                                );
-                                ui.label(format!("Emission Strength"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.specular_color[0])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.specular_color[1])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.specular_color[2])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.specular_color[3])
-                                        .speed(0.01),
-                                );
-                                ui.label(format!("Specular Color"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut s.material.specular).speed(0.01));
-                                ui.label(format!("Specular Probability"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut s.material.smoothness).speed(0.01),
-                                );
-                                ui.label(format!("Smoothness"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut s.material.ior).speed(0.01));
-                                ui.label(format!("Refractive Index"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut s.material.flag).speed(1));
-                                ui.label(format!("Flag"));
-                            });
-                        } else {
-                            let m = &mut state.scene.meshes
-                                [state.selected_entity as usize - state.scene.spheres.len()];
-                            ui.heading("Mesh");
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut m.transform.pos.x).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.transform.pos.y).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.transform.pos.z).speed(0.01));
-                                ui.label(format!("Position"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut m.transform.scale.x).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.transform.scale.y).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.transform.scale.z).speed(0.01));
-                                ui.label(format!("Size"));
-                            });
-
-                            let (mut r_x, mut r_y, mut r_z) =
-                                m.transform.rot.to_euler(glam::EulerRot::XYX);
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut r_x)
-                                        .update_while_editing(false)
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut r_y)
-                                        .update_while_editing(false)
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut r_z)
-                                        .update_while_editing(false)
-                                        .speed(0.01),
-                                );
-                                ui.label(format!("Rotation"));
-                            });
-                            m.transform.rot = Quat::from_euler(glam::EulerRot::XYZ, r_x, r_y, r_z);
-
-                            // Add size?
-
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut m.material.color[0]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.material.color[1]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.material.color[2]).speed(0.01));
-                                ui.add(egui::DragValue::new(&mut m.material.color[3]).speed(0.01));
-                                ui.label(format!("Color"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.emission_color[0])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.emission_color[1])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.emission_color[2])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.emission_color[3])
-                                        .speed(0.01),
-                                );
-                                ui.label(format!("Emissive Color"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.emission_strength)
-                                        .speed(0.01),
-                                );
-                                ui.label(format!("Emission Strength"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.specular_color[0])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.specular_color[1])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.specular_color[2])
-                                        .speed(0.01),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.specular_color[3])
-                                        .speed(0.01),
-                                );
-                                ui.label(format!("Specular Color"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut m.material.specular).speed(0.01));
-                                ui.label(format!("Specular Probability"));
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut m.material.smoothness).speed(0.01),
-                                );
-                                ui.label(format!("Smoothness"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut m.material.ior).speed(0.01));
-                                ui.label(format!("Refractive Index"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut m.material.flag).speed(1));
-                                ui.label(format!("Flag"));
-                            });
-                        }
-                    }
-                    ui.separator();
-                    ui.heading("Entities");
-                    ui.label(format!("Meshes: {:#?}", state.scene.meshes.len()));
-                    ui.label(format!("Spheres: {:#?}", state.scene.spheres.len()));
-                });
-
-            egui::SidePanel::left("Debug")
-                .resizable(true)
-                .width_range(200.0..=350.0)
-                .show(state.egui_renderer.context(), |ui| {
-                    ui.heading("Debug");
-                    ui.separator();
-                    ui.label(format!("Frame: {}", params.frames));
-                    ui.label(format!("FPS: {:.0}", 1.0 / (1.0 * state.dt.as_secs_f64())));
-                    ui.label(format!("Avg Frame Time: {:#?}", state.average_frame_time));
-                    ui.separator();
-                    ui.heading("BVH");
-                    ui.label(format!("Nodes: {}", state.scene.bvh_data.nodes.len()));
-                    ui.label(format!(
-                        "Triangle: {}",
-                        state.scene.bvh_data.triangles.len()
-                    ));
-
-                    egui::ComboBox::from_label("Quality")
-                        .selected_text(format!("{:?}", state.scene.bvh_quality))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut state.scene.bvh_quality,
-                                bvh::Quality::High,
-                                "High",
-                            );
-                            ui.selectable_value(
-                                &mut state.scene.bvh_quality,
-                                bvh::Quality::Low,
-                                "Low",
-                            );
-                            ui.selectable_value(
-                                &mut state.scene.bvh_quality,
-                                bvh::Quality::Disabled,
-                                "Disabled",
-                            );
-                        });
-
-                    if ui.button("Rebuild BVH").clicked() {
-                        state.scene.built_bvh = false;
-                        state.params.frames = -1;
-                        state.average_frame_time = Duration::ZERO;
-                    }
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.label("Resolution");
-                        ui.add(
-                            egui::DragValue::new(&mut params.width)
-                                .update_while_editing(false)
-                                .range(1..=RENDER_SIZE.0),
-                        );
-                        ui.add(
-                            egui::DragValue::new(&mut params.height)
-                                .update_while_editing(false)
-                                .range(1..=RENDER_SIZE.1),
-                        );
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Debug Mode:");
-                        ui.add(
-                            egui::DragValue::new(&mut params.debug_flag)
-                                .speed(1)
-                                .range(0..=DEBUG_MODES),
-                        );
-                    });
-                    ui.add(
-                        egui::Slider::new(&mut params.debug_scale, 1..=1000)
-                            .text("Depth Threshold"),
-                    );
-                    ui.separator();
-                    ui.heading("Entity List");
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        let nothing_selected = state.selected_entity == -1;
-                        for (i, _) in state.scene.spheres.iter().enumerate() {
-                            let selected = state.selected_entity == i as i32 && !nothing_selected;
-                            if ui.selectable_label(selected, "Sphere").clicked() {
-                                state.selected_entity = i as i32;
-                            }
-                        }
-
-                        for (i, m) in state.scene.meshes.iter().enumerate() {
-                            let selected = state.selected_entity - state.scene.spheres.len() as i32
-                                == i as i32
-                                && !nothing_selected;
-                            if ui
-                                .selectable_label(
-                                    selected,
-                                    m.label.clone().unwrap_or("Mesh".to_owned()),
-                                )
-                                .clicked()
-                            {
-                                state.selected_entity = (state.scene.spheres.len() + i) as i32;
-                            }
-                        }
-                    });
-                });
-
-            egui::CentralPanel::default().show(state.egui_renderer.context(), |ui| {
-                egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                    if state.renderer.render_ray_traced_image(ui) {
-                        state.use_mouse = true;
-                        window.set_cursor_visible(!state.use_mouse);
-                        window
-                            .set_cursor_grab(winit::window::CursorGrabMode::Locked)
-                            .unwrap();
-                    }
-                });
-            });
-
-            if params != state.params {
-                state.params = params;
-                state.params.frames = -1;
-                state.average_frame_time = Duration::ZERO;
-            }
-            if camera != state.scene.camera {
-                state.scene.camera = camera;
-                state.params.frames = -1;
-                state.average_frame_time = Duration::ZERO;
-            }
-
-            state.params.skybox = skybox as i32;
-            state.params.accumulate = accumulate as i32;
-
-            state.egui_renderer.end_frame_and_draw(
-                &state.device,
-                &state.queue,
+            engine.egui.end_frame_and_draw(
+                &engine.resources.device,
+                &engine.resources.queue,
                 &mut encoder,
                 window,
                 &surface_view,
@@ -920,7 +303,7 @@ impl App {
             );
         }
 
-        state.queue.submit(Some(encoder.finish()));
+        engine.resources.queue.submit(Some(encoder.finish()));
         surface_texture.present();
     }
     pub fn save_render_to_file(
@@ -1063,24 +446,30 @@ impl ApplicationHandler for App {
         _device_id: winit::event::DeviceId,
         event: winit::event::DeviceEvent,
     ) {
-        let state = self.state.as_mut().unwrap();
+        let engine = self.engine.as_mut().unwrap();
         match event {
             DeviceEvent::MouseMotion { delta } => {
-                if state.use_mouse {
-                    state
+                if engine.tmp.use_mouse {
+                    engine
+                        .scene_manager
                         .scene
                         .camera
                         .controller
                         .process_mouse(delta.0, delta.1);
-                    state.params.frames = -1;
-                    state.average_frame_time = Duration::ZERO;
+                    engine.params.frames = -1;
+                    engine.timing.average_frame_time = Duration::ZERO;
                 }
             }
             DeviceEvent::MouseWheel { delta } => {
-                if state.use_mouse {
-                    state.scene.camera.controller.process_scroll(&delta);
-                    state.params.frames = -1;
-                    state.average_frame_time = Duration::ZERO;
+                if engine.tmp.use_mouse {
+                    engine
+                        .scene_manager
+                        .scene
+                        .camera
+                        .controller
+                        .process_scroll(&delta);
+                    engine.params.frames = -1;
+                    engine.timing.average_frame_time = Duration::ZERO;
                 }
             }
             _ => {}
@@ -1093,10 +482,10 @@ impl ApplicationHandler for App {
         event: winit::event::WindowEvent,
     ) {
         if !self
-            .state
+            .engine
             .as_mut()
             .unwrap()
-            .egui_renderer
+            .egui
             .handle_input(self.window.as_ref().unwrap(), &event)
         {
             self.handle_input(&event);
@@ -1116,9 +505,10 @@ impl ApplicationHandler for App {
         }
     }
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        let timing = &mut self.engine.as_mut().unwrap().timing;
         let now = Instant::now();
-        let dt = now - self.last_render_time;
-        self.last_render_time = now;
+        let dt = now - timing.last_render_time;
+        timing.last_render_time = now;
         self.update(dt);
         self.window.as_ref().unwrap().request_redraw();
     }

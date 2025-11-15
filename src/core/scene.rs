@@ -1,8 +1,4 @@
-use std::{
-    f32::consts::PI,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{f32::consts::PI, sync::Arc};
 
 use glam::{Quat, Vec3};
 use rand::Rng;
@@ -15,6 +11,7 @@ use crate::core::{
     bvh::{self, BVH, MeshDataList, Node, Quality},
     camera::{CameraDescriptor, CameraUniform},
     mesh::{Material, Mesh, MeshInstance, Sphere, Transform, Vertex},
+    ray_tracer::RayTracer,
 };
 
 use super::camera::Camera;
@@ -27,9 +24,6 @@ pub struct SceneDefinition {
 impl SceneDefinition {
     pub fn set_camera(&mut self, camera_description: &CameraDescriptor) {
         self.camera = Camera::new(camera_description);
-    }
-    pub fn add_entity(&mut self, entity: EntityDefinition) {
-        self.entities.push(entity);
     }
     pub fn add_sphere(&mut self, centre: Vec3, radius: f32, material: MaterialDefinition) {
         self.entities.push(EntityDefinition {
@@ -58,6 +52,33 @@ impl Default for SceneDefinition {
             camera: Camera::new(&CameraDescriptor::default()),
             entities: vec![],
         }
+    }
+}
+
+pub struct SceneManager {
+    pub scene: Scene,
+    pub selected_scene: i32,
+    pub selected_entity: i32,
+    pub prev_scene: i32,
+}
+
+impl SceneManager {
+    pub fn new() -> Self {
+        Self {
+            scene: Scene::new(),
+            prev_scene: 0,
+            selected_scene: 0,
+            selected_entity: -1,
+        }
+    }
+    pub fn load_scene(
+        &mut self,
+        scene_definition: &SceneDefinition,
+        assets: &mut AssetManager,
+        ray_tracer: &mut RayTracer,
+    ) {
+        self.scene = Scene::instantiate_scene(scene_definition, assets);
+        ray_tracer.load_scene_gpu_resources(assets);
     }
 }
 
@@ -112,7 +133,7 @@ impl Scene {
         let mut spheres: Vec<Sphere> = vec![];
         let mut meshes: Vec<MeshInstance> = vec![];
         for (i, e) in scene_definition.entities.iter().enumerate() {
-            let mut flag = MaterialFlag::NORMAL as i32;
+            let mut flag = e.material.flag as i32;
             let mut texture_ref = TextureRef::default();
             if let Some(texture) = &e.material.texture {
                 // Handle loading texture (use asset_manager)
@@ -198,7 +219,6 @@ impl Scene {
             Vec3::ZERO,
             1.0,
             MaterialDefinition {
-                label: Some("earth".to_string()),
                 color: [1.0, 0.0, 0.0, 1.0],
                 emission_color: [0.0; 4],
                 specular_color: [1.0; 4],
@@ -792,7 +812,6 @@ impl Scene {
             Vec3::new(5.0, 2.0, 0.0),
             2.0,
             MaterialDefinition {
-                label: None,
                 emission_color: [1.0; 4],
                 emission_strength: 10.0,
                 color: [1.0; 4],

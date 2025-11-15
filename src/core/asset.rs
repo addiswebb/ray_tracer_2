@@ -60,7 +60,6 @@ pub enum MaterialFlag {
 }
 
 pub struct MaterialDefinition {
-    pub label: Option<String>,
     pub color: [f32; 4],
     pub emission_color: [f32; 4],
     pub specular_color: [f32; 4],
@@ -75,13 +74,6 @@ pub struct MaterialDefinition {
 }
 
 impl MaterialDefinition {
-    pub fn texture(path: String) -> MaterialDefinition {
-        MaterialDefinition {
-            flag: MaterialFlag::GLASS,
-            texture: Some(TextureDefinition::FromFile { path }),
-            ..Default::default()
-        }
-    }
     pub fn texture_from_obj() -> MaterialDefinition {
         MaterialDefinition {
             flag: MaterialFlag::GLASS,
@@ -93,7 +85,6 @@ impl MaterialDefinition {
 impl Default for MaterialDefinition {
     fn default() -> Self {
         Self {
-            label: None,
             color: [0.7, 0.7, 0.7, 1.0],
             emission_color: [0.0; 4],
             specular_color: [1.0; 4],
@@ -113,7 +104,6 @@ impl Default for MaterialDefinition {
 impl MaterialDefinition {
     pub fn new() -> Self {
         Self {
-            label: None,
             color: [1.0, 1.0, 1.0, 1.0],
             emission_color: [1.0, 1.0, 1.0, 1.0],
             specular_color: [1.0, 1.0, 1.0, 1.0],

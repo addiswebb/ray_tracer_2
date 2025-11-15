@@ -7,6 +7,7 @@ use image::{ImageBuffer, Rgba};
 
 use crate::core::{
     app::Params,
+    asset::AssetManager,
     bvh::{BVH, Node, PackedTriangle},
     mesh::{MeshUniform, Sphere},
     scene::{Scene, SceneUniform},
@@ -223,50 +224,11 @@ impl RayTracer {
             bvh_nodes_buffer,
         }
     }
-    pub fn create_gpu_resources(
-        &mut self,
-        texture_view: &TextureView,
-        params_buffer: &wgpu::Buffer,
-        images: &Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>,
-    ) {
-        self.bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("RayTracer Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.scene_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: self.sphere_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: self.triangle_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: self.mesh_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: self.bvh_nodes_buffer.as_entire_binding(),
-                },
-            ],
-        }));
+    pub fn load_scene_gpu_resources(&mut self, assets: &mut AssetManager) {
         let mut gpu_textures = Vec::new();
         let mut gpu_texture_views = Vec::new();
         let mut loaded_textures: u32 = 0;
-        for (i, image) in images.iter().enumerate() {
+        for (i, image) in assets.cpu_textures.iter().enumerate() {
             loaded_textures += 1;
             let t = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(format!("t_{}", i).as_str()),
@@ -303,6 +265,87 @@ impl RayTracer {
         }
         let textures_to_fill = MAX_TEXTURES as u32 - loaded_textures;
         for i in 0..textures_to_fill {
+            let dummy_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(format!("d_{}", i).as_str()),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+
+            let dummy_view = dummy_texture.create_view(&TextureViewDescriptor::default());
+            gpu_textures.push(dummy_texture);
+            gpu_texture_views.push(dummy_view);
+        }
+
+        self.textures_bind_group =
+            Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("RayTracer Textures Bind Group"),
+                layout: &self.textures_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureViewArray(
+                            &gpu_texture_views.iter().collect::<Vec<_>>(),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            }));
+    }
+    pub fn create_gpu_resources(
+        &mut self,
+        texture_view: &TextureView,
+        params_buffer: &wgpu::Buffer,
+    ) {
+        self.bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("RayTracer Bind Group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.scene_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.sphere_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.triangle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.mesh_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.bvh_nodes_buffer.as_entire_binding(),
+                },
+            ],
+        }));
+
+        let mut gpu_textures = Vec::new();
+        let mut gpu_texture_views = Vec::new();
+        for i in 0..MAX_TEXTURES as u32 {
             let dummy_texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(format!("d_{}", i).as_str()),
                 size: wgpu::Extent3d {
