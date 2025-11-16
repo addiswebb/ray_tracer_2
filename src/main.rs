@@ -12,7 +12,7 @@ fn main() {
 
 async fn run() {
     env_logger::builder()
-        .filter_module("ray_tracer", log::LevelFilter::Info)
+        .filter_module("ray_tracer_2", log::LevelFilter::Info)
         .filter_module("wgpu_core", log::LevelFilter::Warn)
         .init();
     log::info!("Starting Ray Tracer");

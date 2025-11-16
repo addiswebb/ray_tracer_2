@@ -168,20 +168,6 @@ impl CameraController {
         }
     }
 
-    pub fn is_moving(&self) -> bool {
-        [
-            self.amount_left,
-            self.amount_right,
-            self.amount_forward,
-            self.amount_backward,
-            self.amount_up,
-            self.amount_down,
-            self.scroll,
-        ]
-        .iter()
-        .any(|&x| x != 0.0)
-    }
-
     pub fn process_keyboard(&mut self, key: KeyCode, state: ElementState) -> bool {
         let amount = if state == ElementState::Pressed {
             0.01

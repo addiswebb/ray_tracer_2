@@ -1,8 +1,7 @@
 use std::{
-    collections::HashSet,
     fs::File,
     io::Read,
-    sync::{Arc, Mutex, atomic::AtomicU32},
+    sync::{Arc, atomic::AtomicU32},
 };
 
 use dashmap::DashMap;

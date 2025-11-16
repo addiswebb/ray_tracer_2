@@ -4,7 +4,6 @@ use std::{
         Arc,
         mpsc::{Receiver, Sender, channel},
     },
-    time::Instant,
 };
 
 use glam::{Quat, Vec3};
@@ -20,7 +19,6 @@ use crate::core::{
     bvh::{self, BVH, MeshDataList, Node, Quality},
     camera::{CameraDescriptor, CameraUniform},
     mesh::{Material, Mesh, MeshInstance, Sphere, Transform, Vertex},
-    ray_tracer::RayTracer,
 };
 
 use super::camera::Camera;
@@ -183,7 +181,6 @@ impl Scene {
         scene_definition: &SceneDefinition,
         asset_manager: &mut AssetManager,
     ) -> Scene {
-        let now = Instant::now();
         let (spheres, meshes): (Vec<Sphere>, Vec<MeshInstance>) = scene_definition
             .entities
             .par_iter()

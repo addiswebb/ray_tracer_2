@@ -2,7 +2,6 @@ use std::{mem, num::NonZeroU32, sync::Arc};
 
 use crate::core::{
     app::Params,
-    asset::AssetManager,
     bvh::{BVH, Node, PackedTriangle},
     mesh::{MeshUniform, Sphere},
     scene::{Scene, SceneUniform},
@@ -17,6 +16,7 @@ const MAX_SPHERS: u64 = 500;
 const MAX_TRIANGLES: u64 = 275000;
 pub const MAX_TEXTURES: u64 = 32;
 
+#[allow(unused)]
 pub enum DebugMode {
     Normals = 1,
     Depth,

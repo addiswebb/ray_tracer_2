@@ -2,10 +2,10 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use glam::Vec3;
 use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
 
-use crate::core::mesh::{Mesh, MeshInstance, MeshUniform, Vertex};
+use crate::core::mesh::{ MeshInstance, MeshUniform, Vertex};
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct BVHTriangle {
@@ -150,14 +150,12 @@ impl BVH {
     }
     pub fn build_per_mesh(meshes: &[MeshInstance], quality: Quality) -> MeshDataList {
         log::info!("Building BVH {:#?}", quality);
-        let mut total_stats = BVHStats::start();
         let mut data = MeshDataList::default();
         let mut mesh_lookup: HashMap<String, (usize, usize)> = HashMap::new();
 
         let mesh_results: Vec<(MeshInstance, Vec<PackedTriangle>, Vec<Node>)> = meshes
             .par_iter()
-            .enumerate()
-            .map(|(i, mesh_instance)| {
+            .map(|mesh_instance| {
                 let mut stats = BVHStats::start();
                 let bvh = BVH::build(
                     mesh_instance.mesh.vertices.clone(),

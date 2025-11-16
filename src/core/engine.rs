@@ -17,7 +17,7 @@ use crate::core::{
     egui::EguiRenderer,
     ray_tracer::{MAX_TEXTURES, RayTracer},
     renderer::Renderer,
-    scene::{Scene, SceneManager, SceneName},
+    scene::{SceneManager, SceneName},
 };
 
 pub struct TmpResources {

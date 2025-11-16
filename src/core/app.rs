@@ -23,7 +23,6 @@ use crate::core::{
     egui::UiContext,
     engine::{Engine, RENDER_SIZE},
     ray_tracer::DebugMode,
-    scene::SceneName,
 };
 
 #[repr(C)]
@@ -61,8 +60,16 @@ impl Params {
         let mut params = self.clone();
         params.number_of_bounces = if is_moving { 1 } else { self.number_of_bounces };
         params.rays_per_pixel = if is_moving { 1 } else { self.rays_per_pixel };
-        params.width = if is_moving { 1280 } else { self.width };
-        params.height = if is_moving { 1080 } else { self.height };
+        params.width = if is_moving {
+            RENDER_SIZE.0 / 2
+        } else {
+            self.width
+        };
+        params.height = if is_moving {
+            RENDER_SIZE.1 / 2
+        } else {
+            self.height
+        };
         params
     }
 }
@@ -445,7 +452,7 @@ impl App {
         image.save(path.clone()).unwrap();
         drop(data);
         buffer.unmap();
-        log::info!(" - Saved Render to {}", path);
+        log::info!("Saved Render to {}", path);
         Ok(())
     }
 }
