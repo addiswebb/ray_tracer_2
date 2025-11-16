@@ -1,8 +1,11 @@
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use glam::Vec3;
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
-use crate::core::mesh::{MeshInstance, MeshUniform, Vertex};
+use crate::core::mesh::{Mesh, MeshInstance, MeshUniform, Vertex};
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct BVHTriangle {
@@ -145,41 +148,62 @@ impl BVH {
             quality: Quality::Disabled,
         }
     }
-    pub fn build_per_mesh(meshes: &Vec<MeshInstance>, quality: Quality) -> MeshDataList {
+    pub fn build_per_mesh(meshes: &[MeshInstance], quality: Quality) -> MeshDataList {
         log::info!("Building BVH {:#?}", quality);
-        let mut stats = BVHStats::start();
+        let mut total_stats = BVHStats::start();
         let mut data = MeshDataList::default();
         let mut mesh_lookup: HashMap<String, (usize, usize)> = HashMap::new();
 
-        for (i, mesh_instance) in meshes.iter().enumerate() {
-            let key = if let Some(key) = mesh_instance.label.clone() {
-                key
-            } else {
-                i.to_string()
-            };
-            if !mesh_lookup.contains_key(&key) {
-                mesh_lookup.insert(key.clone(), (data.nodes.len(), data.triangles.len()));
-                let mut bvh = BVH::build(
+        let mesh_results: Vec<(MeshInstance, Vec<PackedTriangle>, Vec<Node>)> = meshes
+            .par_iter()
+            .enumerate()
+            .map(|(i, mesh_instance)| {
+                let mut stats = BVHStats::start();
+                let bvh = BVH::build(
                     mesh_instance.mesh.vertices.clone(),
                     mesh_instance.mesh.indices.clone(),
                     quality,
                     &mut stats,
                 );
-                data.triangles.append(&mut bvh.packed_triangles);
-                data.nodes.append(&mut bvh.nodes);
-            }
-            let (node_offset, triangle_offset) = mesh_lookup.get(&key).unwrap().clone();
+                (mesh_instance.clone(), bvh.packed_triangles, bvh.nodes)
+            })
+            .collect();
+        let mut triangle_offset = 0;
+        let mut node_offset = 0;
+
+        for (i, (mesh_instance, mut triangles, mut nodes)) in mesh_results.into_iter().enumerate() {
+            let num_triangles = triangles.len() as u32;
+            let num_nodes = nodes.len();
+
+            // Record offsets in mesh lookup
+            let key = mesh_instance
+                .label
+                .clone()
+                .unwrap_or(i.to_string())
+                .to_string();
+            mesh_lookup.insert(key.clone(), (node_offset, triangle_offset));
+
+            // Append triangles/nodes to global data
+            data.triangles.append(&mut triangles);
+            data.nodes.append(&mut nodes);
+
+            // Compute model matrix
             let model_to_world = mesh_instance.transform.to_matrix();
-            data.mesh_uniforms.push(MeshUniform {
+            let mesh_uniform = MeshUniform {
                 world_to_model: model_to_world.inverse().to_cols_array_2d(),
                 model_to_world: model_to_world.to_cols_array_2d(),
                 node_offset: node_offset as u32,
-                triangles: (mesh_instance.mesh.indices.len() / 3) as u32,
                 triangle_offset: triangle_offset as u32,
+                triangles: num_triangles,
                 material: mesh_instance.material,
                 ..Default::default()
-            });
+            };
+            data.mesh_uniforms.push(mesh_uniform);
+
+            triangle_offset += num_triangles as usize;
+            node_offset += num_nodes;
         }
+
         data
     }
     pub fn build(
@@ -189,36 +213,44 @@ impl BVH {
         stats: &mut BVHStats,
     ) -> Self {
         let n_tris = indices.len() / 3;
-        let mut build_triangles = Vec::with_capacity(n_tris);
         let packed_triangles = Vec::with_capacity(n_tris);
         if n_tris == 0 {
             return Self::empty();
         }
 
+        let positions = (indices.len() + 3 - 1) / 3;
+        let build_triangles: Vec<BVHTriangle> = (0..positions)
+            .into_par_iter()
+            .map(|j| {
+                let i = j * 3;
+                let index1 = indices[i + 0] as usize;
+                let index2 = indices[i + 1] as usize;
+                let index3 = indices[i + 2] as usize;
+
+                let v1 = vertices[index1].pos;
+                let v2 = vertices[index2].pos;
+                let v3 = vertices[index3].pos;
+
+                let centroid = (v1 + v2 + v3) * (1.0 / 3.0);
+
+                BVHTriangle {
+                    centroid: centroid,
+                    max: v1.max(v2.max(v3)),
+                    min: v1.min(v2.min(v3)),
+                    i: i as i32,
+                }
+            })
+            .collect();
+
         let mut min: [f32; 3] = [f32::MAX; 3];
         let mut max: [f32; 3] = [f32::MIN; 3];
 
-        let mut nodes = Vec::new();
-        for i in (0..indices.len()).step_by(3) {
-            let index1 = indices[i + 0] as usize;
-            let index2 = indices[i + 1] as usize;
-            let index3 = indices[i + 2] as usize;
-
-            let v1 = vertices[index1].pos;
-            let v2 = vertices[index2].pos;
-            let v3 = vertices[index3].pos;
-
-            let centroid = (v1 + v2 + v3) * (1.0 / 3.0);
-
-            let tri = BVHTriangle {
-                centroid: centroid,
-                max: v1.max(v2.max(v3)),
-                min: v1.min(v2.min(v3)),
-                i: i as i32,
-            };
+        // Fit bounding box
+        for tri in build_triangles.iter() {
             BVH::fit_bounds(&mut min, &mut max, &tri);
-            build_triangles.push(tri);
         }
+
+        let mut nodes = Vec::new();
         nodes.push(Node {
             aabb_min: min,
             aabb_max: max,
@@ -244,14 +276,17 @@ impl BVH {
                 bvh.subdivide(0, 0, bvh.build_triangles.len(), 0, stats);
             }
         }
-        for i in 0..bvh.build_triangles.len() {
-            let built_tri = bvh.build_triangles[i];
-            let vert1 = vertices[indices[built_tri.i as usize + 0] as usize];
-            let vert2 = vertices[indices[built_tri.i as usize + 1] as usize];
-            let vert3 = vertices[indices[built_tri.i as usize + 2] as usize];
-            bvh.packed_triangles
-                .push(PackedTriangle::new(vert1, vert2, vert3));
-        }
+        bvh.packed_triangles = (0..bvh.build_triangles.len())
+            .into_par_iter()
+            .map(|i| {
+                let built_tri = bvh.build_triangles[i];
+                let vert1 = vertices[indices[built_tri.i as usize + 0] as usize];
+                let vert2 = vertices[indices[built_tri.i as usize + 1] as usize];
+                let vert3 = vertices[indices[built_tri.i as usize + 2] as usize];
+                PackedTriangle::new(vert1, vert2, vert3)
+            })
+            .collect();
+
         bvh
     }
 
@@ -449,6 +484,7 @@ pub struct BVHStats {
     node_count: u32,
 }
 
+#[allow(unused)]
 impl BVHStats {
     pub fn start() -> Self {
         Self {

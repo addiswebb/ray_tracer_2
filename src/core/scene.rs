@@ -10,7 +10,7 @@ use std::{
 use glam::{Quat, Vec3};
 use image::{ImageBuffer, Rgba};
 use rand::Rng;
-use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::core::{
     asset::{
@@ -184,74 +184,86 @@ impl Scene {
         asset_manager: &mut AssetManager,
     ) -> Scene {
         let now = Instant::now();
-        let mut spheres: Vec<Sphere> = vec![];
-        let mut meshes: Vec<MeshInstance> = vec![];
-        let mut textures: Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>> = vec![];
-        for (i, e) in scene_definition.entities.iter().enumerate() {
-            let mut flag = e.material.flag as i32;
-            let mut texture_ref = TextureRef::default();
-            if let Some(texture) = &e.material.texture {
-                // Handle loading texture (use asset_manager)
-                match texture {
-                    TextureDefinition::FromFile { path } => {
-                        texture_ref = asset_manager.load_texture(&path, &mut textures);
-                        flag = MaterialFlag::TEXTURE as i32;
-                    }
-                    _ => (),
-                };
-            }
-            let material = Material {
-                color: e.material.color,
-                emission_color: e.material.emission_color,
-                specular_color: e.material.specular_color,
-                absorption: e.material.absorption,
-                absorption_stength: e.material.absorption_stength,
-                emission_strength: e.material.emission_strength,
-                smoothness: e.material.smoothness,
-                specular: e.material.specular,
-                ior: e.material.ior,
-                flag,
-                texture_index: texture_ref.index,
-                width: texture_ref.width,
-                height: texture_ref.height,
-                ..Default::default()
-            };
-            match &e.primitive {
-                Primitive::Sphere { centre, radius } => {
-                    spheres.push(Sphere::new(*centre, *radius, material));
-                }
-                Primitive::Mesh(mesh_def) => {
-                    match mesh_def {
-                        MeshDefinition::FromFile { path, use_mtl } => {
-                            // Load mesh using asset manager
-                            let mut m = asset_manager.load_model_with_material(
-                                path,
-                                e.transform,
-                                *use_mtl,
-                                material,
-                                &mut textures,
-                            );
-                            meshes.append(&mut m);
+        let (spheres, meshes): (Vec<Sphere>, Vec<MeshInstance>) = scene_definition
+            .entities
+            .par_iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let mut spheres_chunk: Vec<Sphere> = vec![];
+                let mut meshes_chunk: Vec<MeshInstance> = vec![];
+
+                let mut flag = e.material.flag as i32;
+                let mut texture_ref = TextureRef::default();
+                if let Some(texture) = &e.material.texture {
+                    // Handle loading texture (use asset_manager)
+                    match texture {
+                        TextureDefinition::FromFile { path } => {
+                            texture_ref = asset_manager.load_texture(&path);
+                            flag = MaterialFlag::TEXTURE as i32;
                         }
-                        MeshDefinition::FromData { vertices, indices } => {
-                            meshes.push(MeshInstance {
-                                label: Some(format!("mesh_{}", i)),
-                                transform: e.transform,
-                                mesh: Arc::new(Mesh {
-                                    vertices: vertices.clone(),
-                                    indices: indices.clone(),
-                                }),
-                                material,
-                            })
-                        }
+                        _ => (),
                     };
                 }
-            }
-        }
-        println!("Instatiated scene in: {:?}", Instant::now() - now);
-        let now = Instant::now();
+                let material = Material {
+                    color: e.material.color,
+                    emission_color: e.material.emission_color,
+                    specular_color: e.material.specular_color,
+                    absorption: e.material.absorption,
+                    absorption_stength: e.material.absorption_stength,
+                    emission_strength: e.material.emission_strength,
+                    smoothness: e.material.smoothness,
+                    specular: e.material.specular,
+                    ior: e.material.ior,
+                    flag,
+                    texture_index: texture_ref.index,
+                    width: texture_ref.width,
+                    height: texture_ref.height,
+                    ..Default::default()
+                };
+                match &e.primitive {
+                    Primitive::Sphere { centre, radius } => {
+                        spheres_chunk.push(Sphere::new(*centre, *radius, material));
+                    }
+                    Primitive::Mesh(mesh_def) => {
+                        match mesh_def {
+                            MeshDefinition::FromFile { path, use_mtl } => {
+                                // Load mesh using asset manager
+                                let mut m = asset_manager.load_model_with_material(
+                                    path,
+                                    e.transform,
+                                    *use_mtl,
+                                    material,
+                                );
+                                meshes_chunk.append(&mut m);
+                            }
+                            MeshDefinition::FromData { vertices, indices } => {
+                                meshes_chunk.push(MeshInstance {
+                                    label: Some(format!("mesh_{}", i)),
+                                    transform: e.transform,
+                                    mesh: Arc::new(Mesh {
+                                        vertices: vertices.clone(),
+                                        indices: indices.clone(),
+                                    }),
+                                    material,
+                                })
+                            }
+                        };
+                    }
+                }
+
+                (spheres_chunk, meshes_chunk)
+            })
+            .reduce(
+                || (vec![], vec![]),
+                |(mut s1, mut m1), (s2, m2)| {
+                    s1.extend(s2);
+                    m1.extend(m2);
+                    (s1, m1)
+                },
+            );
+
         let bvh_data = BVH::build_per_mesh(&meshes, bvh::Quality::High);
-        println!("Built BVH in: {:?}", Instant::now() - now);
+        let textures = asset_manager.create_texture_array();
         Self {
             camera: scene_definition.camera,
             spheres,

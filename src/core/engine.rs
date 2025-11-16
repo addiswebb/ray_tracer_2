@@ -211,7 +211,6 @@ pub struct Engine {
     pub scene_manager: SceneManager,
     pub params: Params,
     pub tmp: TmpResources,
-    // TODO: scene_manager: SceneManager
 }
 
 impl Engine {
@@ -246,8 +245,8 @@ impl Engine {
         let params = Params {
             width,
             height,
-            number_of_bounces: 4,
-            rays_per_pixel: 2,
+            number_of_bounces: 5,
+            rays_per_pixel: 1,
             ..Default::default()
         };
         let tmp = TmpResources::default();

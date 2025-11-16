@@ -539,8 +539,8 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
         }
         case DEBUG_FOCUS_DST: {
             if !hit.hit {return vec4<f32>(0.0); }
-            let s = f32(params.debug_scale) / 10.0;
-            let d = hit.dst / f32(params.debug_scale);
+            let s = f32(params.debug_scale) / 100.0;
+            let d = hit.dst;
             if d > s {
                 return vec4<f32>(0.0, 1.0, 0.0, 1.0);
             } else {

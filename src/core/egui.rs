@@ -120,12 +120,12 @@ impl EguiRenderer {
                     });
 
                     ui.add(
-                        egui::Slider::new(&mut camera.diverge_strength, 0.0..=100.0)
+                        egui::Slider::new(&mut camera.diverge_strength, 0.0..=500.0)
                             .step_by(0.1)
                             .text("Diverge Strength"),
                     );
                     ui.add(
-                        egui::Slider::new(&mut camera.defocus_strength, 0.0..=100.0)
+                        egui::Slider::new(&mut camera.defocus_strength, 0.0..=500.0)
                             .step_by(0.1)
                             .text("Defocus Strength"),
                     );

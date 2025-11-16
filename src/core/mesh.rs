@@ -86,6 +86,7 @@ pub struct Mesh {
     pub indices: Arc<Vec<u32>>,
 }
 
+#[derive(Clone)]
 pub struct MeshInstance {
     pub label: Option<String>,
     pub mesh: Arc<Mesh>,
