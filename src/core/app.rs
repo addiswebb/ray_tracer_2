@@ -462,6 +462,7 @@ impl ApplicationHandler for App {
         let window = event_loop
             .create_window(Window::default_attributes())
             .unwrap();
+        window.focus_window();
         pollster::block_on(self.set_window(window));
     }
     fn device_event(
