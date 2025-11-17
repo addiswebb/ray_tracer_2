@@ -19,10 +19,9 @@ use winit::{
     window::{Fullscreen, Window},
 };
 
-use crate::core::{
-    egui::UiContext,
-    engine::{Engine, RENDER_SIZE},
-    ray_tracer::DebugMode,
+use crate::{
+    core::engine::{Engine, RENDER_SIZE},
+    rendering::{egui::UiContext, ray_tracer::DebugMode},
 };
 
 #[repr(C)]
@@ -212,7 +211,10 @@ impl App {
                             &engine.resources.texture,
                             &engine.resources.device,
                             &engine.resources.queue,
-                            "C:/users/addis/downloads/test.png".to_string(),
+                            format!(
+                                "C:/users/addis/photos/ray_tracer/render_{}",
+                                engine.params.frames
+                            ),
                         )
                         .unwrap();
                     }
@@ -463,6 +465,7 @@ impl ApplicationHandler for App {
             .create_window(Window::default_attributes())
             .unwrap();
         window.focus_window();
+        window.set_title("Ray Tracer");
         pollster::block_on(self.set_window(window));
     }
     fn device_event(

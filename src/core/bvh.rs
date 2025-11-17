@@ -1,11 +1,12 @@
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use glam::Vec3;
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
-use crate::core::mesh::{ MeshInstance, MeshUniform, Vertex};
+use crate::scene::components::geometry::{
+    mesh::{MeshInstance, MeshUniform},
+    vertex::Vertex,
+};
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct BVHTriangle {
@@ -136,7 +137,7 @@ impl Default for Quality {
 }
 
 impl BVH {
-    pub const MAX_NODES: u32 = 520000;
+    pub const MAX_NODES: u32 = 520000 * 5;
     pub const MAX_DEPTH: u64 = 32;
     pub const TEST_SPLITS: u32 = 50;
     pub fn empty() -> Self {
@@ -149,7 +150,7 @@ impl BVH {
         }
     }
     pub fn build_per_mesh(meshes: &[MeshInstance], quality: Quality) -> MeshDataList {
-        log::info!("Building BVH {:#?}", quality);
+        log::info!("Building BVH [Quality: {:#?}]", quality);
         let mut data = MeshDataList::default();
         let mut mesh_lookup: HashMap<String, (usize, usize)> = HashMap::new();
 
@@ -158,8 +159,8 @@ impl BVH {
             .map(|mesh_instance| {
                 let mut stats = BVHStats::start();
                 let bvh = BVH::build(
-                    mesh_instance.mesh.vertices.clone(),
-                    mesh_instance.mesh.indices.clone(),
+                    mesh_instance.data.vertices.clone(),
+                    mesh_instance.data.indices.clone(),
                     quality,
                     &mut stats,
                 );

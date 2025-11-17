@@ -11,14 +11,13 @@ use egui_wgpu::{
 };
 use winit::window::Window;
 
-use crate::core::{
-    app::Params,
-    asset::AssetManager,
+use crate::core::{app::Params, asset::AssetManager};
+use crate::rendering::{
     egui::EguiRenderer,
     ray_tracer::{MAX_TEXTURES, RayTracer},
     renderer::Renderer,
-    scene::{SceneManager, SceneName},
 };
+use crate::scene::scene::{SceneManager, SceneName};
 
 pub struct TmpResources {
     pub use_mouse: bool,
