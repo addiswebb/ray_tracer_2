@@ -126,7 +126,9 @@ impl App {
     }
 
     pub fn update(&mut self, dt: Duration) {
-        let engine = self.engine.as_mut().unwrap();
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
         let timing = &mut engine.timing;
         timing.update(dt);
 
@@ -161,7 +163,9 @@ impl App {
     }
 
     fn handle_input(&mut self, event: &WindowEvent) -> bool {
-        let engine = self.engine.as_mut().unwrap();
+        let Some(engine) = self.engine.as_mut() else {
+            return false;
+        };
         if !engine.tmp.use_mouse {
             return false;
         }
@@ -279,7 +283,9 @@ impl App {
     }
 
     fn handle_redraw(&mut self) {
-        let engine = self.engine.as_mut().unwrap();
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
 
         // Skip if window is minimized (maybe unwanted behaviour)
         if let Some(window) = self.window.as_ref() {
@@ -474,7 +480,9 @@ impl ApplicationHandler for App {
         _device_id: winit::event::DeviceId,
         event: winit::event::DeviceEvent,
     ) {
-        let engine = self.engine.as_mut().unwrap();
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
         match event {
             DeviceEvent::MouseMotion { delta } => {
                 if engine.tmp.use_mouse {
