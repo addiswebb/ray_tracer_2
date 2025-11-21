@@ -6,7 +6,7 @@ use std::{
 
 use dashmap::DashMap;
 use glam::Vec3;
-use image::{ImageBuffer, Rgba};
+use image::{ImageBuffer, RgbaImage};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
@@ -25,12 +25,13 @@ use crate::scene::components::{
 pub struct AssetManager {
     loaded_meshes: Arc<DashMap<String, Arc<MeshData>>>,
     pub loaded_textures: Arc<DashMap<String, TextureRef>>,
-    pub cpu_textures: DashMap<String, Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
+    pub cpu_textures: DashMap<String, Arc<RgbaImage>>,
     next_texture_index: AtomicU32,
 }
 impl AssetManager {
-    pub fn create_texture_array(&self) -> Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>> {
-        let mut texture_array = vec![Arc::new(ImageBuffer::new(1, 1)); MAX_TEXTURES as usize];
+    pub fn create_texture_array(&self) -> Vec<Arc<RgbaImage>> {
+        let mut texture_array: Vec<Arc<RgbaImage>> =
+            vec![Arc::new(ImageBuffer::new(1, 1)); MAX_TEXTURES as usize];
 
         for entry in self.cpu_textures.iter() {
             let key = entry.key();
@@ -58,7 +59,8 @@ impl AssetManager {
     }
     pub fn load_texture(&self, path: &String) -> TextureRef {
         if self.loaded_textures.len() == MAX_TEXTURES as usize {
-            panic!("Cannot load more than {} textures", MAX_TEXTURES);
+            log::warn!("Cannot load more than {} textures", MAX_TEXTURES);
+            return TextureRef::default();
         }
         // Check if we have already loaded this texture,
         // we can find the texture_ref and arc-texture later using its path
@@ -74,13 +76,12 @@ impl AssetManager {
             .unwrap();
 
         let image = image::imageops::flip_horizontal(&image::load_from_memory(&buffer).unwrap());
-
         let index = self
             .next_texture_index
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let texture_ref = TextureRef {
-            index: index as u32,
+            index: index as i32,
             width: image.width(),
             height: image.height(),
         };
@@ -130,10 +131,17 @@ impl AssetManager {
         if load_materials && let Ok(materials) = materials {
             let texture_refs: DashMap<String, TextureRef> = DashMap::new();
             materials.par_iter().for_each(|m| {
-                if let Some(texture_path) = &m.diffuse_texture {
-                    if !texture_refs.contains_key(texture_path) {
-                        let texture_ref = self.load_texture(texture_path);
-                        texture_refs.insert(texture_path.clone(), texture_ref.clone());
+                if let Some(diffuse_path) = &m.diffuse_texture {
+                    if !texture_refs.contains_key(diffuse_path) {
+                        let texture_ref = self.load_texture(diffuse_path);
+                        texture_refs.insert(diffuse_path.clone(), texture_ref.clone());
+                    }
+                }
+
+                if let Some(normal_path) = m.unknown_param.get("map_Disp") {
+                    if !texture_refs.contains_key(normal_path) {
+                        let texture_ref = self.load_texture(normal_path);
+                        texture_refs.insert(normal_path.clone(), texture_ref.clone());
                     }
                 }
             });
@@ -145,13 +153,19 @@ impl AssetManager {
                     6 => MaterialFlag::GLASS,
                     7 => MaterialFlag::GLASS,
                     9 => MaterialFlag::GLASS,
-                    _ => MaterialFlag::NORMAL,
+                    _ => MaterialFlag::DEFAULT,
                 };
-                let texture_ref = if let Some(texture_path) = &m.diffuse_texture {
+                let diffuse_index = if let Some(diffuse_path) = &m.diffuse_texture {
                     flag = MaterialFlag::TEXTURE;
-                    *texture_refs.get(texture_path).unwrap().value()
+                    texture_refs.get(diffuse_path).unwrap().value().index
                 } else {
-                    TextureRef::default()
+                    -1
+                };
+                let normal_index = if let Some(normal_path) = m.unknown_param.get("map_Disp") {
+                    flag = MaterialFlag::TEXTURE;
+                    texture_refs.get(normal_path).unwrap().value().index
+                } else {
+                    -1
                 };
                 let mat = MaterialUniform {
                     color: [color[0], color[1], color[2], 1.0],
@@ -162,9 +176,8 @@ impl AssetManager {
                     specular: (spec[0] + spec[1] + spec[2]) / 3.0,
                     ior: m.optical_density.unwrap_or(1.0),
                     flag: flag as i32,
-                    texture_index: texture_ref.index,
-                    width: texture_ref.width,
-                    height: texture_ref.height,
+                    diffuse_index,
+                    normal_index,
                     ..Default::default()
                 };
                 // Index in m.materials, path if uses texture, the loaded material
@@ -174,6 +187,7 @@ impl AssetManager {
 
         let meshes: Vec<MeshInstance> = models
             .into_par_iter()
+            .take(30)
             .map(|m| {
                 let mut mesh_data = MeshData {
                     vertices: Arc::new(vec![]),

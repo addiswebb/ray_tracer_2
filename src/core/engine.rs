@@ -238,7 +238,7 @@ impl Engine {
 
         let asset_manager = AssetManager::new();
         let mut scene_manager = SceneManager::new(asset_manager);
-        scene_manager.request_scene(SceneName::Room2);
+        scene_manager.request_scene(SceneName::Sponza);
 
         let timing = FrameTiming::new();
         let params = Params {

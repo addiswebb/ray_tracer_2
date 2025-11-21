@@ -16,7 +16,7 @@ const WORKGROUP_SIZE: (u32, u32) = (8, 8);
 const MAX_MESHES: u64 = 400;
 const MAX_SPHERS: u64 = 500;
 const MAX_TRIANGLES: u64 = 275000 * 5;
-pub const MAX_TEXTURES: u64 = 32;
+pub const MAX_TEXTURES: u64 = 64;
 
 #[allow(unused)]
 pub enum DebugMode {
@@ -199,8 +199,8 @@ impl RayTracer {
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
 

@@ -21,7 +21,7 @@ use std::{
 };
 
 use glam::{Quat, Vec3};
-use image::{ImageBuffer, Rgba};
+use image::{DynamicImage, RgbaImage};
 use rand::Rng;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
@@ -149,7 +149,7 @@ pub struct Scene {
     pub bvh_data: MeshDataList,
     pub bvh_quality: Quality,
     pub built_bvh: bool,
-    pub textures: Vec<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
+    pub textures: Vec<Arc<RgbaImage>>,
 }
 
 #[allow(dead_code)]
@@ -187,9 +187,9 @@ impl Scene {
 
                 let mut flag = e.material.flag as i32;
                 let mut texture_ref = TextureRef::default();
-                if let Some(texture) = &e.material.texture {
+                if let Some(diffuse) = &e.material.diffuse_texture {
                     // Handle loading texture (use asset_manager)
-                    match texture {
+                    match diffuse {
                         TextureDefinition::FromFile { path } => {
                             texture_ref = asset_manager.load_texture(&path);
                             flag = MaterialFlag::TEXTURE as i32;
@@ -208,9 +208,7 @@ impl Scene {
                     specular: e.material.specular,
                     ior: e.material.ior,
                     flag,
-                    texture_index: texture_ref.index,
-                    width: texture_ref.width,
-                    height: texture_ref.height,
+                    diffuse_index: texture_ref.index as i32,
                     ..Default::default()
                 };
                 match &e.primitive {
@@ -296,9 +294,10 @@ impl Scene {
                 specular: 0.05,
                 ior: 1.0,
                 flag: MaterialFlag::TEXTURE,
-                texture: Some(TextureDefinition::FromFile {
+                diffuse_texture: Some(TextureDefinition::FromFile {
                     path: "earthmap.png".to_string(),
                 }),
+                normal_texture: None,
             },
         );
 
@@ -742,7 +741,7 @@ impl Scene {
 
         // Spheres
         scene.add_sphere(
-            Vec3::new(0.0, 1.0, 4.8),
+            Vec3::new(0.0, 1.0, 4.4),
             1.15,
             MaterialDefinition::new()
                 .specular([1.0; 4], 0.517)
@@ -900,9 +899,7 @@ impl Scene {
                 absorption_stength: 0.0,
                 smoothness: 0.0,
                 specular: 0.0,
-                ior: 1.0,
-                flag: MaterialFlag::NORMAL,
-                texture: None,
+                ..Default::default()
             },
         );
         scene_def
@@ -950,8 +947,9 @@ impl Scene {
                 smoothness: 0.0,
                 specular: 0.0,
                 ior: 1.0,
-                flag: MaterialFlag::NORMAL,
-                texture: None,
+                flag: MaterialFlag::DEFAULT,
+                diffuse_texture: None,
+                normal_texture: None,
             },
         );
         scene_def

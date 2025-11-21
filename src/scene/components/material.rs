@@ -13,10 +13,8 @@ pub struct MaterialUniform {
     pub specular: f32,
     pub ior: f32,
     pub flag: i32,
-    pub texture_index: u32,
-    pub width: u32,
-    pub height: u32,
-    pub _p1: [f32; 3],
+    pub diffuse_index: i32,
+    pub normal_index: i32,
 }
 impl Default for MaterialUniform {
     fn default() -> Self {
@@ -31,17 +29,15 @@ impl Default for MaterialUniform {
             specular: 0.00,
             ior: 1.0,
             flag: 0,
-            texture_index: 0,
-            width: 0,
-            height: 0,
-            _p1: [0.0; 3],
+            diffuse_index: -1,
+            normal_index: -1,
         }
     }
 }
 
 #[derive(Clone, Copy)]
 pub enum MaterialFlag {
-    NORMAL = 0,
+    DEFAULT = 0,
     GLASS = 1,
     TEXTURE = 2,
 }
@@ -57,7 +53,8 @@ pub struct MaterialDefinition {
     pub specular: f32,
     pub ior: f32,
     pub flag: MaterialFlag,
-    pub texture: Option<TextureDefinition>,
+    pub diffuse_texture: Option<TextureDefinition>,
+    pub normal_texture: Option<TextureDefinition>,
 }
 
 impl MaterialDefinition {
@@ -81,8 +78,9 @@ impl Default for MaterialDefinition {
             smoothness: 1.0,
             specular: 0.0,
             ior: 1.0,
-            flag: MaterialFlag::NORMAL,
-            texture: None,
+            flag: MaterialFlag::DEFAULT,
+            diffuse_texture: None,
+            normal_texture: None,
         }
     }
 }
@@ -100,8 +98,9 @@ impl MaterialDefinition {
             smoothness: 0.0,
             specular: 0.1,
             ior: 0.0,
-            flag: MaterialFlag::NORMAL,
-            texture: None,
+            flag: MaterialFlag::DEFAULT,
+            diffuse_texture: None,
+            normal_texture: None,
         }
     }
     pub fn color(mut self, color: [f32; 4]) -> Self {

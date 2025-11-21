@@ -22,9 +22,8 @@ struct Material {
     specular: f32,
     ior: f32,
     flag: i32,
-    texture_index: u32,
-    width: u32,
-    height: u32,
+    diffuse_index: i32,
+    normal_index: i32,
 }
 
 struct Sphere {
@@ -437,14 +436,23 @@ fn trace(incident_ray: Ray, seed: ptr<function, u32>) -> vec4<f32> {
             ray.origin = hit.hit_point + 1e-4 * hit.normal * sign(dot(hit.normal, ray.dir));
         } else {
             let is_specular_bounce = hit.material.specular >= rand(seed);
-            let diffuse_dir = rand_hemisphere(hit.normal, seed);
-            let specular_dir = reflect(ray.dir, hit.normal);
+            var normal: vec3<f32>;
+            if hit.material.flag == MATERIAL_TEXTURE && hit.material.normal_index != -1{
+                // let x = textureSampleLevel(textures[hit.material.normal_index], samplers[0], hit.uv, 0.0);
+                // normal = 2.0 * vec3(x.r, x.g, x.b) - 1.0;
+                // TODO: Correctly handle normal map textures
+            }else{
+                normal = hit.normal;
+            }
+            normal = hit.normal;
+            let diffuse_dir = rand_hemisphere(normal, seed);
+            let specular_dir = reflect(ray.dir, normal);
             let emitted_light = hit.material.emission_color * hit.material.emission_strength;
             ray.dir = normalize(mix(diffuse_dir, specular_dir, hit.material.smoothness * f32(is_specular_bounce)));
             incoming_light += emitted_light * ray.transmittance;
             var color: vec4<f32>;
-            if hit.material.flag == MATERIAL_TEXTURE {
-                color = textureSampleLevel(textures[hit.material.texture_index], samplers[0], hit.uv, 0.0);
+            if hit.material.flag == MATERIAL_TEXTURE && hit.material.diffuse_index != -1{
+                color = textureSampleLevel(textures[hit.material.diffuse_index], samplers[0], hit.uv, 0.0);
             } else {
                 color = hit.material.color;
             }
@@ -529,8 +537,15 @@ fn debug_trace(i: FragInput) -> vec4<f32> {
         }
         case DEBUG_NORMALS:{
             if !hit.hit {return vec4<f32>(0.0);}
-            let n = hit.normal * 0.5 + 0.5;
-            return vec4<f32>(n.x, n.y, n.z, 1.0);
+            var n: vec3<f32>;
+
+            if hit.material.flag == MATERIAL_TEXTURE && hit.material.normal_index != -1{
+                let x = textureSampleLevel(textures[hit.material.normal_index], samplers[0], hit.uv, 0.0);
+                n = 0.5 * (2.0 * vec3(x.r, x.g, x.b)-1.0) + 0.5;
+            }else{
+                n= hit.normal * 0.5 + 0.5;
+            }
+            return vec4<f32>(n.r, n.g, n.b, 1.0);
         }
         case DEBUG_NODES_TRIANGLES:{
             let d = f32(stats[0]) / f32(params.debug_scale);
