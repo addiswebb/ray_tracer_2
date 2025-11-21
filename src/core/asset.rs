@@ -18,13 +18,12 @@ use crate::scene::components::{
         vertex::Vertex,
     },
     material::{MaterialFlag, MaterialUniform},
-    texture::TextureRef,
     transform::Transform,
 };
 
 pub struct AssetManager {
     loaded_meshes: Arc<DashMap<String, Arc<MeshData>>>,
-    pub loaded_textures: Arc<DashMap<String, TextureRef>>,
+    pub loaded_textures: Arc<DashMap<String, i32>>,
     pub cpu_textures: DashMap<String, Arc<RgbaImage>>,
     next_texture_index: AtomicU32,
 }
@@ -35,8 +34,8 @@ impl AssetManager {
 
         for entry in self.cpu_textures.iter() {
             let key = entry.key();
-            if let Some(texture_ref) = self.loaded_textures.get(key) {
-                let index = texture_ref.index as usize;
+            if let Some(index) = self.loaded_textures.get(key) {
+                let index = index.clone() as usize;
                 if index < MAX_TEXTURES as usize {
                     texture_array[index] = entry.value().clone();
                 }
@@ -57,10 +56,10 @@ impl AssetManager {
             next_texture_index: AtomicU32::new(0),
         }
     }
-    pub fn load_texture(&self, path: &String) -> TextureRef {
+    pub fn load_texture(&self, path: &String) -> i32 {
         if self.loaded_textures.len() == MAX_TEXTURES as usize {
             log::warn!("Cannot load more than {} textures", MAX_TEXTURES);
-            return TextureRef::default();
+            return -1;
         }
         // Check if we have already loaded this texture,
         // we can find the texture_ref and arc-texture later using its path
@@ -69,7 +68,6 @@ impl AssetManager {
         }
         let mut buffer = vec![];
         let file_path = std::path::Path::new(FILE).join("assets").join(path.clone());
-        println!("loading texture at : {:?}", file_path);
         File::open(file_path)
             .unwrap()
             .read_to_end(&mut buffer)
@@ -78,17 +76,11 @@ impl AssetManager {
         let image = image::imageops::flip_horizontal(&image::load_from_memory(&buffer).unwrap());
         let index = self
             .next_texture_index
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i32;
 
-        let texture_ref = TextureRef {
-            index: index as i32,
-            width: image.width(),
-            height: image.height(),
-        };
-        self.loaded_textures
-            .insert(path.clone(), texture_ref.clone());
+        self.loaded_textures.insert(path.clone(), index.clone());
         self.cpu_textures.insert(path.clone(), Arc::new(image));
-        texture_ref
+        index
     }
     pub fn load_model_with_material(
         &self,
@@ -129,7 +121,7 @@ impl AssetManager {
         // Must get index before textures are added,
         // This is index of where the next texture will be stored on gpu texture array
         if load_materials && let Ok(materials) = materials {
-            let texture_refs: DashMap<String, TextureRef> = DashMap::new();
+            let texture_refs: DashMap<String, i32> = DashMap::new();
             materials.par_iter().for_each(|m| {
                 if let Some(diffuse_path) = &m.diffuse_texture {
                     if !texture_refs.contains_key(diffuse_path) {
@@ -157,13 +149,13 @@ impl AssetManager {
                 };
                 let diffuse_index = if let Some(diffuse_path) = &m.diffuse_texture {
                     flag = MaterialFlag::TEXTURE;
-                    texture_refs.get(diffuse_path).unwrap().value().index
+                    texture_refs.get(diffuse_path).unwrap().value().clone()
                 } else {
                     -1
                 };
                 let normal_index = if let Some(normal_path) = m.unknown_param.get("map_Disp") {
                     flag = MaterialFlag::TEXTURE;
-                    texture_refs.get(normal_path).unwrap().value().index
+                    texture_refs.get(normal_path).unwrap().value().clone()
                 } else {
                     -1
                 };

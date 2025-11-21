@@ -6,7 +6,7 @@ use crate::scene::{
             vertex::Vertex,
         },
         material::{MaterialDefinition, MaterialFlag, MaterialUniform},
-        texture::{TextureDefinition, TextureRef},
+        texture::TextureDefinition,
         transform::Transform,
     },
     entity::{EntityDefinition, Primitive},
@@ -21,7 +21,7 @@ use std::{
 };
 
 use glam::{Quat, Vec3};
-use image::{DynamicImage, RgbaImage};
+use image::RgbaImage;
 use rand::Rng;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
@@ -186,17 +186,18 @@ impl Scene {
                 let mut meshes_chunk: Vec<MeshInstance> = vec![];
 
                 let mut flag = e.material.flag as i32;
-                let mut texture_ref = TextureRef::default();
-                if let Some(diffuse) = &e.material.diffuse_texture {
+                let diffuse_index = if let Some(diffuse) = &e.material.diffuse_texture {
                     // Handle loading texture (use asset_manager)
                     match diffuse {
                         TextureDefinition::FromFile { path } => {
-                            texture_ref = asset_manager.load_texture(&path);
                             flag = MaterialFlag::TEXTURE as i32;
+                            asset_manager.load_texture(&path)
                         }
-                        _ => (),
-                    };
-                }
+                        _ => -1,
+                    }
+                } else {
+                    -1
+                };
                 let material = MaterialUniform {
                     color: e.material.color,
                     emission_color: e.material.emission_color,
@@ -208,7 +209,7 @@ impl Scene {
                     specular: e.material.specular,
                     ior: e.material.ior,
                     flag,
-                    diffuse_index: texture_ref.index as i32,
+                    diffuse_index,
                     ..Default::default()
                 };
                 match &e.primitive {
