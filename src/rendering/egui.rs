@@ -289,8 +289,6 @@ impl EguiRenderer {
                             });
                             m.transform.rot = Quat::from_euler(glam::EulerRot::XYZ, r_x, r_y, r_z);
 
-                            // Add size?
-
                             ui.horizontal(|ui| {
                                 ui.add(egui::DragValue::new(&mut m.material.color[0]).speed(0.01));
                                 ui.add(egui::DragValue::new(&mut m.material.color[1]).speed(0.01));

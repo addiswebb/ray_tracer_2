@@ -238,7 +238,7 @@ impl Engine {
 
         let asset_manager = AssetManager::new();
         let mut scene_manager = SceneManager::new(asset_manager);
-        scene_manager.request_scene(SceneName::Sponza);
+        scene_manager.request_scene(SceneName::CornellBox);
 
         let timing = FrameTiming::new();
         let params = Params {
@@ -246,6 +246,7 @@ impl Engine {
             height,
             number_of_bounces: 5,
             rays_per_pixel: 1,
+            skybox: 1,
             ..Default::default()
         };
         let tmp = TmpResources::default();

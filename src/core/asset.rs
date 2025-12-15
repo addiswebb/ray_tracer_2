@@ -1,4 +1,5 @@
 use std::{
+    f32::NAN,
     fs::File,
     io::Read,
     sync::{Arc, atomic::AtomicU32},
@@ -143,7 +144,7 @@ impl AssetManager {
                 let mut flag = match m.illumination_model.unwrap_or(0) {
                     4 => MaterialFlag::GLASS,
                     6 => MaterialFlag::GLASS,
-                    7 => MaterialFlag::GLASS,
+                    // 7 => Mirror
                     9 => MaterialFlag::GLASS,
                     _ => MaterialFlag::DEFAULT,
                 };
@@ -159,13 +160,40 @@ impl AssetManager {
                 } else {
                     -1
                 };
+                let mut emission_strength = 0.0;
+                let emission_color = if let Some(ke_str) = m.unknown_param.get("Ke") {
+                    let vals: Vec<f32> = ke_str
+                        .split_whitespace()
+                        .filter_map(|s| s.parse::<f32>().ok())
+                        .collect();
+                    if vals.len() == 3 {
+                        emission_strength = vals.iter().copied().reduce(f32::max).unwrap_or(1.0);
+                        Vec3::new(vals[0], vals[1], vals[2])
+                            / if emission_strength == 0.0 {
+                                1.0
+                            } else {
+                                emission_strength
+                            }
+                    } else {
+                        Vec3::ZERO
+                    }
+                } else {
+                    Vec3::ZERO
+                };
+
                 let mat = MaterialUniform {
                     color: [color[0], color[1], color[2], 1.0],
-                    emission_color: [color[0], color[1], color[2], 1.0],
+                    emission_color: [emission_color[0], emission_color[1], emission_color[2], 1.0],
                     specular_color: [spec[0], spec[1], spec[2], 1.0],
-                    emission_strength: 0.0,
-                    smoothness: 1.0 - (m.shininess.unwrap_or(0.0) / 1000.0),
-                    specular: (spec[0] + spec[1] + spec[2]) / 3.0,
+                    emission_strength: emission_strength * 2.0,
+                    // smoothness: 1.0 - (m.shininess.unwrap_or(0.0) / 1000.0),
+                    smoothness: (m.shininess.unwrap_or(0.0) / 100.0).sqrt().clamp(0.0, 1.0),
+                    specular: spec
+                        .iter()
+                        .copied()
+                        .reduce(f32::max)
+                        .unwrap_or(0.0)
+                        .clamp(0.0, 1.0),
                     ior: m.optical_density.unwrap_or(1.0),
                     flag: flag as i32,
                     diffuse_index,
@@ -179,7 +207,6 @@ impl AssetManager {
 
         let meshes: Vec<MeshInstance> = models
             .into_par_iter()
-            .take(30)
             .map(|m| {
                 let mut mesh_data = MeshData {
                     vertices: Arc::new(vec![]),
@@ -190,6 +217,48 @@ impl AssetManager {
                     mesh_data.vertices = mesh_ref.vertices.clone();
                     mesh_data.indices = mesh_ref.indices.clone();
                 } else {
+                    let num_vertices = m.mesh.positions.len() / 3;
+                    let mut calculated_normals = vec![Vec3::ZERO; num_vertices];
+
+                    // Pre calculate normals if needed
+                    if m.mesh.normals.is_empty() {
+                        for tri in m.mesh.indices.chunks_exact(3) {
+                            let i0 = tri[0] as usize;
+                            let i1 = tri[1] as usize;
+                            let i2 = tri[2] as usize;
+
+                            let v0 = Vec3::new(
+                                m.mesh.positions[3 * i0],
+                                m.mesh.positions[3 * i0 + 1],
+                                m.mesh.positions[3 * i0 + 2],
+                            );
+
+                            let v1 = Vec3::new(
+                                m.mesh.positions[3 * i1],
+                                m.mesh.positions[3 * i1 + 1],
+                                m.mesh.positions[3 * i1 + 2],
+                            );
+
+                            let v2 = Vec3::new(
+                                m.mesh.positions[3 * i2],
+                                m.mesh.positions[3 * i2 + 1],
+                                m.mesh.positions[3 * i2 + 2],
+                            );
+                            let e1 = v1 - v0;
+                            let e2 = v2 - v1;
+                            let normal = e1.cross(e2);
+                            calculated_normals[i0] += normal;
+                            calculated_normals[i1] += normal;
+                            calculated_normals[i2] += normal;
+                        }
+                        // Normalize normals
+                        for n in &mut calculated_normals {
+                            let len = n.length();
+                            if len > 0.0 {
+                                *n /= len;
+                            }
+                        }
+                    }
                     mesh_data.vertices = Arc::new(
                         m.mesh
                             .indices
@@ -213,7 +282,7 @@ impl AssetManager {
                                         m.mesh.normals[3 * ni + 2],
                                     )
                                 } else if !m.mesh.normals.is_empty() {
-                                    // if no normals are found, use the position index (may be wrong for some OBJ files)
+                                    // If no indices for normals are found, uses normal indices
                                     let ni = pi;
                                     Vec3::new(
                                         m.mesh.normals[3 * ni],
@@ -221,7 +290,8 @@ impl AssetManager {
                                         m.mesh.normals[3 * ni + 2],
                                     )
                                 } else {
-                                    Vec3::ZERO
+                                    // If no normals are found, use computed normals
+                                    calculated_normals[pi]
                                 };
 
                                 let uv = if !m.mesh.texcoords.is_empty()

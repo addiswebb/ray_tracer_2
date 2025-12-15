@@ -39,6 +39,7 @@ pub enum SceneName {
     Room2,
     Metal,
     Sponza,
+    CornellBox,
     Empty,
 }
 
@@ -50,17 +51,19 @@ impl SceneName {
             SceneName::Room => SceneName::Room2,
             SceneName::Room2 => SceneName::Metal,
             SceneName::Metal => SceneName::Sponza,
-            SceneName::Sponza => SceneName::Balls,
+            SceneName::Sponza => SceneName::CornellBox,
+            SceneName::CornellBox => SceneName::Balls,
             _ => self,
         }
     }
-    pub const ALL: [SceneName; 6] = [
+    pub const ALL: [SceneName; 7] = [
         SceneName::Balls,
         SceneName::RandomBalls,
         SceneName::Room,
         SceneName::Room2,
         SceneName::Metal,
         SceneName::Sponza,
+        SceneName::CornellBox,
     ];
 }
 
@@ -905,6 +908,29 @@ impl Scene {
         );
         scene_def
     }
+    pub fn cornell_box() -> SceneDefinition {
+        let mut scene_def = SceneDefinition::default();
+
+        scene_def.set_camera(&CameraDescriptor {
+            transform: Transform::cam(Vec3::new(0.0, 1.0, 2.0), Vec3::new(0.0, 1.0, 0.0)),
+            ..Default::default()
+        });
+
+        scene_def.add_mesh(
+            Transform {
+                pos: Vec3::ZERO,
+                rot: Quat::IDENTITY,
+                scale: Vec3::splat(1.0),
+            },
+            MeshDefinition::FromFile {
+                path: "CornellBox-Original.obj".to_string(),
+                use_mtl: true,
+            },
+            MaterialDefinition::texture_from_obj(),
+        );
+
+        scene_def
+    }
     pub fn bugatti() -> SceneDefinition {
         let mut scene_def = SceneDefinition::default();
 
@@ -982,6 +1008,7 @@ impl Scene {
             SceneName::Room2 => Scene::room_2(),
             SceneName::Metal => Scene::metal(),
             SceneName::Sponza => Scene::sponza(),
+            SceneName::CornellBox => Scene::cornell_box(),
             SceneName::Empty => todo!(),
         }
     }
